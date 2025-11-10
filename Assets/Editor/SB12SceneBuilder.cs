@@ -393,8 +393,19 @@ namespace SB12.Editor
             // Ensure UI root exists
             Transform ui = FindOrCreateChild(root.transform, "UI");
 
-            // Find or create the panel GameObject explicitly to avoid using a destroyed Transform
-            GameObject panelGO = ui.Find("SB12_Panel") ? ui.Find("SB12_Panel").gameObject : null;
+            // Find or create the panel GameObject; support both under UI and under Wall_North for idempotency
+            GameObject panelGO = null;
+            Transform existing = ui.Find("SB12_Panel");
+            if (existing != null) panelGO = existing.gameObject;
+            if (panelGO == null)
+            {
+                Transform wallN = GameObject.Find("RoomRoot/Environment/Wall_North")?.transform;
+                if (wallN != null)
+                {
+                    Transform onWall = wallN.Find("SB12_Panel");
+                    if (onWall != null) panelGO = onWall.gameObject;
+                }
+            }
             if (panelGO == null)
             {
                 panelGO = new GameObject("SB12_Panel", typeof(RectTransform));
@@ -416,31 +427,59 @@ namespace SB12.Editor
             {
                 rt = panelGO.AddComponent<RectTransform>();
             }
-            rt.sizeDelta = new Vector2(160, 90);
-            rt.localScale = Vector3.one * 0.0015f;
+            // Initial size; will be overridden to fit wall if found
+            rt.sizeDelta = new Vector2(1000, 600);
+            rt.localScale = Vector3.one * 0.001f;
+            rt.pivot = new Vector2(0.5f, 0.0f); // bottom-center so requested Y=0 sits along the floor line
 
             if (!panelGO.GetComponent<GraphicRaycaster>()) panelGO.AddComponent<GraphicRaycaster>();
             if (!panelGO.GetComponent<TrackedDeviceGraphicRaycaster>()) panelGO.AddComponent<TrackedDeviceGraphicRaycaster>();
 
             Transform canvasTf = panelGO.transform;
             CreateUIElement(canvasTf, "Background", new Vector2(0, 0), new Vector2(1, 1), "").gameObject.AddComponent<Image>().color = new Color(0.1f, 0.1f, 0.1f, 0.95f);
-            CreateUIElement(canvasTf, "Title", new Vector2(0, 0.8f), new Vector2(1, 1), "SB12 EKG Training");
-            CreateUIElement(canvasTf, "BodyText", new Vector2(0.1f, 0.3f), new Vector2(0.9f, 0.8f), "Welcome to the EKG electrode placement training.");
+            var titleTf = CreateUIElement(canvasTf, "Title", new Vector2(0, 0.8f), new Vector2(1, 1), "SB12 EKG Training");
+            var bodyTf  = CreateUIElement(canvasTf, "BodyText", new Vector2(0.08f, 0.25f), new Vector2(0.92f, 0.78f), "Welcome to the EKG electrode placement training.");
 
-            Transform btnObj = CreateUIElement(canvasTf, "ContinueButton", new Vector2(0.35f, 0.05f), new Vector2(0.65f, 0.25f), "");
+            Transform btnObj = CreateUIElement(canvasTf, "ContinueButton", new Vector2(0.35f, 0.06f), new Vector2(0.65f, 0.18f), "");
             btnObj.gameObject.AddComponent<Image>().color = new Color(0.2f, 0.5f, 0.2f);
             btnObj.gameObject.AddComponent<Button>();
-            CreateUIElement(btnObj, "Text", new Vector2(0, 0), new Vector2(1, 1), "Continue");
+            var btnTextTf = CreateUIElement(btnObj, "Text", new Vector2(0, 0), new Vector2(1, 1), "Continue");
+            var titleText = titleTf.GetComponent<Text>();
+            if (titleText) { titleText.fontSize = 140; titleText.alignment = TextAnchor.UpperCenter; }
+            var bodyText = bodyTf.GetComponent<Text>();
+            if (bodyText) { bodyText.fontSize = 72; bodyText.alignment = TextAnchor.UpperLeft; }
+            var btnText = btnTextTf.GetComponent<Text>();
+            if (btnText) { btnText.fontSize = 84; btnText.alignment = TextAnchor.MiddleCenter; }
 
-            // Reparent UI to the north wall so it's visible on the wall
+            // Fit and place the panel relative to the north wall
             Transform wallNorth = GameObject.Find("RoomRoot/Environment/Wall_North")?.transform;
+            float worldScale = 0.001f; // 1px = 1mm
             if (wallNorth != null)
             {
-                panelGO.transform.SetParent(wallNorth);
-                // Mount at comfortable eye height and just in front of wall face
-                panelGO.transform.localPosition = new Vector3(0f, 1.4f, 0.055f);
-                panelGO.transform.localRotation = Quaternion.identity;
-                panelGO.transform.localScale = Vector3.one * 0.0015f;
+                float wallW = wallNorth.localScale.x; // expected 6m
+                float wallH = wallNorth.localScale.y; // expected 3m
+                float targetW = wallW * 0.5f; // 50% of wall width
+                float targetH = wallH * 0.4f; // 40% of wall height
+                rt.sizeDelta = new Vector2(targetW / worldScale, targetH / worldScale);
+
+                // Parent to the wall and neutralize parent's non-uniform scale so panel keeps consistent world size
+                panelGO.transform.SetParent(wallNorth, false);
+                Vector3 p = wallNorth.lossyScale;
+                Vector3 inv = new Vector3(
+                    worldScale / Mathf.Max(0.0001f, p.x),
+                    worldScale / Mathf.Max(0.0001f, p.y),
+                    worldScale / Mathf.Max(0.0001f, p.z)
+                );
+                panelGO.transform.localScale = inv;
+                panelGO.transform.localRotation = Quaternion.identity; // face same way as wall (into room)
+                panelGO.transform.localPosition = new Vector3(0f, 0f, 0.055f); // slight offset out of wall
+            }
+            else
+            {
+                // Fallback world placement centered to room
+                panelGO.transform.SetParent(ui, false);
+                panelGO.transform.position = new Vector3(0f, 1.5f, 2.9f);
+                panelGO.transform.rotation = Quaternion.Euler(0, 180f, 0);
             }
         }
         
