@@ -5,14 +5,14 @@ This blueprint translates the storyboard into an actionable Unity/XR implementat
 - Target: Oculus Quest 2 (XR Interaction Toolkit)
 - Project version: 6000.0.32f1
 - XR Rig: Samples/XR Interaction Toolkit/Starter Assets/Prefabs/XR Origin (XR Rig).prefab
-- Core Prefabs/Assets:
-  - Electrode Sticker: `Assets/YAML/Prefabs/Electrode Sticker.prefab`
-  - Electrode Mount: `Assets/YAML/Prefabs/ElectrodeMount.prefab`
-  - Lead Root (wire): `Assets/YAML/Prefabs/Lead root.prefab`
-  - Peeled Pad Backing: `Assets/YAML/Prefabs/Peeled Pad Backing.prefab` (spawned on grab by Sticker)
-  - Patient: `Assets/Art/Geometry/EKG Patient/EKG Patient In Bed.fbx`
-  - EKG Machine Console: `Assets/Art/Geometry/EKG Machine/EKG Machine Console.fbx`
-  - Cable Splitter / VGA Plug: `Assets/Art/Geometry/EKG Machine/*`
+-- Core Assets in use (no Art/Code/YAML folders, only 3D models):
+  - Patient: `Assets/3DModelsElectrode/EKG Patient In Bed.fbx` (or `EKG Patient.fbx`)
+  - EKG Machine Console: `Assets/3DModelsElectrode/EKG Machine Console.fbx`
+  - Electrode Pad with backing: `Assets/3DModelsElectrode/EKG Pad With Back.fbx`
+  - Peeled backing: `Assets/3DModelsElectrode/EKG Backing Peeled.fbx`
+  - Electrode head: `Assets/3DModelsElectrode/EKG Electrode.fbx`
+  - Cable splitter and plug: `Assets/3DModelsElectrode/EKG Cable Splitter.fbx`, `VGA Plug.fbx`
+  - Props: `Pillow.fbx`, `Chair With Shirt.obj`
 
 
 ## 1) Scene and Room Setup (Global)
@@ -191,36 +191,33 @@ Implementation note: the same panel can update a progress indicator (• between
   - Dim environment, show summary panel, optional exit button
 
 
-## 4) Prefab Placement Plan (aligned to screenshots)
+## 4) Object Placement Plan (aligned to screenshots)
 
 Use `PatientAnchor` (sternum-level empty) as reference for chest mounting coordinates. Axis convention: +X patient’s right, +Y up, +Z towards patient’s feet.
 
-- **Electrode Mounts – Limb Leads (relative to PatientAnchor)**
+- **Electrode target zones – Limb Leads (relative to PatientAnchor)**
   - RA (Right Arm) – White: pos (+0.55, +0.00, +0.15), rot (0, 0, 0)
   - LA (Left Arm) – Black: pos (-0.55, +0.00, +0.15), rot (0, 0, 0)
   - RL (Right Leg) – Green: pos (+0.35, -0.55, +0.25), rot (0, 0, 0)
   - LL (Left Leg) – Red: pos (-0.35, -0.55, +0.25), rot (0, 0, 0)
-  - Place four instances of `ElectrodeMount.prefab` with `leadID` set accordingly
+  - Create empty GameObjects named `Mount_RA/LA/RL/LL` at these transforms; use simple trigger colliders (spheres) to detect placement.
 
-- **Electrode Mounts – Chest Leads V1–V6 (relative to PatientAnchor)**
+- **Electrode target zones – Chest Leads V1–V6 (relative to PatientAnchor)**
   - V1 (Red): 4th ICS, right sternal border → pos (+0.05, +0.05, -0.05)
   - V2 (Yellow): 4th ICS, left sternal border → pos (-0.05, +0.05, -0.05)
   - V3 (Green): midway V2–V4 → pos (-0.10, +0.06, -0.03)
   - V4 (Blue): 5th ICS, midclavicular line → pos (-0.16, +0.06, 0.00)
   - V5 (Orange): anterior axillary line, level with V4 → pos (-0.22, +0.07, 0.00)
   - V6 (Purple): midaxillary line, level with V4/V5 → pos (-0.28, +0.07, 0.00)
-  - Six instances of `ElectrodeMount.prefab` with `leadID` V1–V6
-  - Visual markers: apply colored decal/marker sprites at same positions (screenshot 1)
+  - Create empties `Mount_V1..V6` with trigger colliders; use small colored discs/quad decals to match screenshot markers.
 
-- **Electrode Stickers on Tray** (10 instances)
+- **Electrode Pads on Tray** (10 instances)
   - Parent: `Tray`
-  - Grid layout starting pos (1.12, 0.93, 0.02), spacing (0.06, 0, 0.06)
-  - Random small rotation jitter for realism
+  - Instantiate `EKG Pad With Back.fbx` ten times in a tidy grid. Starting pos (1.12, 0.93, 0.02), spacing (0.06, 0, 0.06). Add `XR Grab Interactable` + collider.
+  - On first grab, optionally hide backing and instantiate `EKG Backing Peeled.fbx` near hand for peel effect.
 
-- **Lead Wires on Rack** (10 instances of `Lead root.prefab`)
-  - Parent: `Rack_Bar`
-  - Staggered positions along bar from z ∈ [-0.60 .. -0.20], y ~ 1.05, x ~ 1.2; alternating small rotations
-  - Set `leadID` on `Lead head` to RA/LA/RL/LL/V1..V6; material colors match electrode labels
+- **Lead wires placeholder**
+  - If no wire meshes are available, use `LineRenderer` or simple cylinders from the rack to the pads after a successful connection. Color the material to match RA/LA/RL/LL/V1..V6.
 
 - **EKG Machine Console**
   - Parent: `Cart_Top`
@@ -233,29 +230,14 @@ Use `PatientAnchor` (sternum-level empty) as reference for chest mounting coordi
   - `TA_Cart`: (1.4, 0, 0.4)
 
 
-## 5) Interaction and Wiring (existing scripts)
+## 5) Interaction Implementation Notes (no code packages required)
 
-- `Electrode Sticker.prefab`
-  - On Grab: spawns `Peeled Pad Backing`, hides adhesive backing, enables attachable collider
-  - On First Select Entered: enable main collider for placement
-
-- `ElectrodeMount.prefab`
-  - Set `leadID` per mount
-  - Events:
-    - `OnSticker(leadID)` → `ElectrodesViewModel.AttachSticker(leadID)`
-    - `OnLead(leadID)` → `ElectrodesViewModel.AttachLead(leadID)`
-    - `OnWrongLead(leadID)` → show warning toast
-
-- `Lead root.prefab`
-  - Uses Spline Extrude to render cable; `Lead head` has collider + `ElectrodeMetadata.leadID`
-  - On attach to matching mount: confirm click + light
-
-- `ElectrodesViewModel`
-  - `SetSticker/SetLead` update `ElectrodesModel`
-  - When `StickersDone && LeadsDone` → enable machine power button glow
-
-- Yarn/Audio
-  - Use narration wavs to step users through Intro → Limb → Chest → Connect → Verify → Complete
+- Use XR Interaction Toolkit only:
+  - Add `XR Grab Interactable` + `Rigidbody` + collider to pads; `XR Simple Interactable` to power button.
+  - Add trigger colliders to `Mount_*` empties; write a minimal `PadPlacement` MonoBehaviour that, on trigger with the correct mount name, snaps the pad, plays a sound, and marks it placed.
+  - Keep a simple `GameState` MonoBehaviour on a manager object that tracks which mounts are filled and when all 10 are placed. Then enable the power button glow and the waveform canvas.
+- Lead connection (optional placeholder): when a pad is placed and the user presses on it, draw a colored `LineRenderer` from the rack bar to the pad to simulate a connected wire. Require a short hold to confirm (haptic click).
+- UI Slide Sequence from section 2.5 drives text updates; use a single world-space canvas and advance via `Continue`.
 
 
 ## 6) UI Copy (concise)
@@ -291,14 +273,30 @@ Use `PatientAnchor` (sternum-level empty) as reference for chest mounting coordi
 
 ## 9) Appendix: Exact Asset Paths
 
-- Prefabs: `Assets/YAML/Prefabs/`
-  - Electrode Sticker.prefab
-  - ElectrodeMount.prefab
-  - Lead root.prefab
-  - Peeled Pad Backing.prefab
-- Meshes: `Assets/Art/Geometry/EKG Machine/*`, `Assets/Art/Geometry/EKG Patient/*`
-- Audio: `Assets/Art/Audio/Narration/*`
-- Textures/Materials: `Assets/Art/Textures/*`, `Assets/Art/Materials/*`
+Active assets location: `Assets/3DModelsElectrode`
 
+- Patient models:
+  - `Assets/3DModelsElectrode/EKG Patient In Bed.fbx`
+  - `Assets/3DModelsElectrode/EKG Patient.fbx`
+- Machine and parts:
+  - `Assets/3DModelsElectrode/EKG Machine Console.fbx`
+  - `Assets/3DModelsElectrode/EKG Cable Splitter.fbx`
+  - `Assets/3DModelsElectrode/VGA Plug.fbx`
+- Electrodes and pads:
+  - `Assets/3DModelsElectrode/EKG Pad With Back.fbx`
+  - `Assets/3DModelsElectrode/EKG Backing Peeled.fbx`
+  - `Assets/3DModelsElectrode/EKG Electrode.fbx`
+- Props and samples:
+  - `Assets/3DModelsElectrode/Pillow.fbx`
+  - `Assets/3DModelsElectrode/Chair With Shirt.obj`
+  - `Assets/3DModelsElectrode/LeftHand.fbx`, `RightHand.fbx`
+  - `Assets/3DModelsElectrode/UniversalController.fbx`, `PushButton.fbx`, `BlinkVisual.fbx`
+- Reference images (for UI/waveforms):
+  - `Assets/3DModelsElectrode/EKG Normal.png`
+  - `Assets/3DModelsElectrode/EKG Atrial Fibrillation.png`
+  - `Assets/3DModelsElectrode/EKG Ventricular Tachycardia.png`
+  - `Assets/3DModelsElectrode/EKG Premature Ventricular Contraction.png`
+  - `Assets/3DModelsElectrode/EKG incorrect Placement.png`
 
-Notes: Positions are recommended starting values based on the storyboard and screenshots and should be fine-tuned to the actual patient mesh proportions and bed/cart dimensions in-scene.
+  
+  Notes: Positions are recommended starting values based on the storyboard and screenshots and should be fine-tuned to the actual patient mesh proportions and bed/cart dimensions in-scene.
