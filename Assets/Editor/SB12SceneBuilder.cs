@@ -20,6 +20,7 @@ namespace SB12.Editor
         private const string ASSETS_FOLDER = "Assets/3DModelsElectrode";
         
         private static Dictionary<string, GameObject> cachedObjects = new Dictionary<string, GameObject>();
+        private static readonly Dictionary<string, Material> matCache = new Dictionary<string, Material>();
         private static int createdCount, updatedCount, warningCount;
         private static List<string> missingAssets = new List<string>();
         
@@ -182,13 +183,18 @@ namespace SB12.Editor
             Transform lighting = FindOrCreateChild(root.transform, "Lighting");
             
             // Floor
-            CreatePrimitive(env, "Floor", PrimitiveType.Plane, Vector3.zero, Quaternion.identity, new Vector3(6, 1, 6));
+            Transform floor = CreatePrimitive(env, "Floor", PrimitiveType.Plane, Vector3.zero, Quaternion.identity, new Vector3(6, 1, 6));
+            ApplyColor(floor, "mat_floor", new Color32(180, 180, 180, 255));
             
             // Walls
-            CreatePrimitive(env, "Wall_North", PrimitiveType.Cube, new Vector3(0, 1.5f, 3), Quaternion.Euler(0, 180, 0), new Vector3(6, 3, 0.1f));
-            CreatePrimitive(env, "Wall_South", PrimitiveType.Cube, new Vector3(0, 1.5f, -3), Quaternion.identity, new Vector3(6, 3, 0.1f));
-            CreatePrimitive(env, "Wall_East", PrimitiveType.Cube, new Vector3(3, 1.5f, 0), Quaternion.Euler(0, -90, 0), new Vector3(6, 3, 0.1f));
-            CreatePrimitive(env, "Wall_West", PrimitiveType.Cube, new Vector3(-3, 1.5f, 0), Quaternion.Euler(0, 90, 0), new Vector3(6, 3, 0.1f));
+            Transform wN = CreatePrimitive(env, "Wall_North", PrimitiveType.Cube, new Vector3(0, 1.5f, 3), Quaternion.Euler(0, 180, 0), new Vector3(6, 3, 0.1f));
+            Transform wS = CreatePrimitive(env, "Wall_South", PrimitiveType.Cube, new Vector3(0, 1.5f, -3), Quaternion.identity, new Vector3(6, 3, 0.1f));
+            Transform wE = CreatePrimitive(env, "Wall_East", PrimitiveType.Cube, new Vector3(3, 1.5f, 0), Quaternion.Euler(0, -90, 0), new Vector3(6, 3, 0.1f));
+            Transform wW = CreatePrimitive(env, "Wall_West", PrimitiveType.Cube, new Vector3(-3, 1.5f, 0), Quaternion.Euler(0, 90, 0), new Vector3(6, 3, 0.1f));
+            ApplyColor(wN, "mat_wall", new Color32(220, 220, 220, 255));
+            ApplyColor(wS, "mat_wall", new Color32(220, 220, 220, 255));
+            ApplyColor(wE, "mat_wall", new Color32(220, 220, 220, 255));
+            ApplyColor(wW, "mat_wall", new Color32(220, 220, 220, 255));
             
             // Lights
             CreateLight(lighting, "Directional Light", LightType.Directional, Vector3.zero, Quaternion.Euler(50, -30, 0));
@@ -200,10 +206,6 @@ namespace SB12.Editor
         {
             Transform bed = FindOrCreateChild(root.transform, "Bed");
             
-            CreatePrimitive(bed, "Bed_Base", PrimitiveType.Cube, new Vector3(0, 0.35f, 0), Quaternion.identity, new Vector3(2.0f, 0.3f, 0.8f));
-            CreatePrimitive(bed, "Bed_Mattress", PrimitiveType.Cube, new Vector3(0, 0.7f, 0), Quaternion.identity, new Vector3(2.0f, 0.12f, 0.8f));
-            CreatePrimitive(bed, "Headrest", PrimitiveType.Cube, new Vector3(0.8f, 0.78f, 0), Quaternion.Euler(0, 0, 10), new Vector3(0.35f, 0.08f, 0.8f));
-            
             // Patient
             Transform patient = bed.Find("Patient");
             if (patient == null)
@@ -213,7 +215,7 @@ namespace SB12.Editor
                 {
                     patient = ((GameObject)PrefabUtility.InstantiatePrefab(patientFBX, bed)).transform;
                     patient.name = "Patient";
-                    patient.position = new Vector3(0, 0.82f, 0);
+                    patient.position = new Vector3(0, 0f, 0);
                     patient.rotation = Quaternion.Euler(0, -90, 0);
                 }
                 else
@@ -230,7 +232,8 @@ namespace SB12.Editor
         {
             Transform cart = FindOrCreateChild(root.transform, "Cart");
             
-            CreatePrimitive(cart, "Cart_Top", PrimitiveType.Cube, new Vector3(1.2f, 0.92f, 0.45f), Quaternion.identity, new Vector3(0.9f, 0.06f, 0.6f));
+            Transform cartTop = CreatePrimitive(cart, "Cart_Top", PrimitiveType.Cube, new Vector3(1.2f, 0.92f, 0.45f), Quaternion.identity, new Vector3(0.9f, 0.06f, 0.6f));
+            ApplyColor(cartTop, "mat_cart", new Color32(120, 120, 120, 255));
             CreatePrimitive(cart, "Cart_Leg_FL", PrimitiveType.Cube, new Vector3(1.55f, 0.45f, 0.15f), Quaternion.identity, new Vector3(0.05f, 0.9f, 0.05f));
             CreatePrimitive(cart, "Cart_Leg_FR", PrimitiveType.Cube, new Vector3(1.55f, 0.45f, 0.75f), Quaternion.identity, new Vector3(0.05f, 0.9f, 0.05f));
             CreatePrimitive(cart, "Cart_Leg_BL", PrimitiveType.Cube, new Vector3(0.85f, 0.45f, 0.15f), Quaternion.identity, new Vector3(0.05f, 0.9f, 0.05f));
@@ -258,12 +261,18 @@ namespace SB12.Editor
             Transform powerBtn = CreatePrimitive(cart, "PowerButton", PrimitiveType.Cube, new Vector3(1.35f, 1.05f, 0.35f), Quaternion.identity, new Vector3(0.05f, 0.05f, 0.02f));
             powerBtn.gameObject.AddComponent<BoxCollider>();
             powerBtn.gameObject.AddComponent<XRSimpleInteractable>();
+            ApplyColor(powerBtn, "mat_power", new Color32(200, 60, 60, 255));
             
             Transform tray = FindOrCreateChild(cart, "Tray");
-            CreatePrimitive(tray, "Tray_Surface", PrimitiveType.Cube, new Vector3(1.2f, 0.9f, 0), Quaternion.identity, new Vector3(0.6f, 0.03f, 0.4f));
+            // Place tray centered on the cart top surface
+            tray.position = new Vector3(1.2f, 0.95f, 0.45f);
+            Transform traySurf = CreatePrimitive(tray, "Tray_Surface", PrimitiveType.Cube, Vector3.zero, Quaternion.identity, new Vector3(0.6f, 0.03f, 0.4f));
+            ApplyColor(traySurf, "mat_tray", new Color32(170, 170, 170, 255));
             
             Transform rack = FindOrCreateChild(cart, "Rack");
-            CreatePrimitive(rack, "Rack_Bar", PrimitiveType.Cylinder, new Vector3(1.2f, 1.05f, -0.4f), Quaternion.Euler(0, 0, 90), new Vector3(0.01f, 0.7f, 0.01f));
+            rack.position = new Vector3(1.2f, 1.05f, -0.4f);
+            Transform rackBar = CreatePrimitive(rack, "Rack_Bar", PrimitiveType.Cylinder, Vector3.zero, Quaternion.Euler(0, 0, 90), new Vector3(0.01f, 0.7f, 0.01f));
+            ApplyColor(rackBar, "mat_rack", new Color32(100, 100, 100, 255));
         }
         
         private static void CreateMountPoints(GameObject root)
@@ -289,10 +298,27 @@ namespace SB12.Editor
             {
                 Transform mount = FindOrCreateChild(mounts, mountNames[i]);
                 mount.localPosition = positions[i];
-                
-                SphereCollider col = mount.GetComponent<SphereCollider>() ?? mount.gameObject.AddComponent<SphereCollider>();
-                col.isTrigger = true;
-                col.radius = 0.03f;
+
+                // Ensure collider exists and is configured safely
+                SphereCollider col = mount.GetComponent<SphereCollider>();
+                if (col == null)
+                {
+                    try
+                    {
+                        col = mount.gameObject.AddComponent<SphereCollider>();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"Failed adding SphereCollider to {mount.name}: {ex.Message}");
+                    }
+                }
+                if (col != null)
+                {
+                    col.isTrigger = true;
+                    col.radius = 0.03f;
+                }
+
+                // Tagging skipped (project may not define a "Mount" tag). Matching is done by name.
                 
                 Transform marker = mount.Find("Marker");
                 if (marker == null)
@@ -302,7 +328,17 @@ namespace SB12.Editor
                     quad.transform.SetParent(mount);
                     quad.transform.localPosition = Vector3.zero;
                     quad.transform.localScale = new Vector3(0.03f, 0.03f, 0.03f);
-                    quad.GetComponent<Renderer>().material.color = mountNames[i].Contains("V") ? Color.green : Color.yellow;
+                    var rend = quad.GetComponent<Renderer>();
+                    if (rend != null)
+                    {
+                        var mat = rend.sharedMaterial; // avoid instantiating materials in edit mode
+                        if (mat == null)
+                        {
+                            mat = new Material(Shader.Find("Standard"));
+                            rend.sharedMaterial = mat;
+                        }
+                        mat.color = mountNames[i].Contains("V") ? Color.green : Color.yellow;
+                    }
                 }
             }
         }
@@ -339,7 +375,10 @@ namespace SB12.Editor
                     
                     int row = i / 5;
                     int col = i % 5;
-                    pad.localPosition = new Vector3(-0.08f + col * 0.04f, 0.03f, -0.1f + row * 0.06f);
+                    float startX = -0.22f, spacingX = 0.11f;
+                    float startZ = -0.12f, spacingZ = 0.12f;
+                    pad.localPosition = new Vector3(startX + col * spacingX, 0.03f, startZ + row * spacingZ);
+                    pad.localRotation = Quaternion.identity;
                     
                     padObj.AddComponent<Rigidbody>();
                     padObj.AddComponent<BoxCollider>();
@@ -351,36 +390,65 @@ namespace SB12.Editor
         
         private static void CreateUI(GameObject root)
         {
+            // Ensure UI root exists
             Transform ui = FindOrCreateChild(root.transform, "UI");
-            Transform canvas = FindOrCreateChild(ui, "SB12_Panel");
-            
-            Canvas canvasComp = canvas.GetComponent<Canvas>() ?? canvas.gameObject.AddComponent<Canvas>();
+
+            // Find or create the panel GameObject explicitly to avoid using a destroyed Transform
+            GameObject panelGO = ui.Find("SB12_Panel") ? ui.Find("SB12_Panel").gameObject : null;
+            if (panelGO == null)
+            {
+                panelGO = new GameObject("SB12_Panel", typeof(RectTransform));
+                panelGO.transform.SetParent(ui);
+                createdCount++;
+            }
+
+            // Ensure Canvas exists
+            Canvas canvasComp = panelGO.GetComponent<Canvas>();
+            if (canvasComp == null)
+            {
+                canvasComp = panelGO.AddComponent<Canvas>();
+            }
             canvasComp.renderMode = RenderMode.WorldSpace;
-            
-            RectTransform rt = canvas.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(110, 60);
-            rt.position = new Vector3(-0.2f, 1.5f, -1.0f);
-            rt.rotation = Quaternion.Euler(0, 15, 0);
-            rt.localScale = Vector3.one * 0.01f;
-            
-            if (!canvas.GetComponent<GraphicRaycaster>()) canvas.gameObject.AddComponent<GraphicRaycaster>();
-            if (!canvas.GetComponent<TrackedDeviceGraphicRaycaster>()) canvas.gameObject.AddComponent<TrackedDeviceGraphicRaycaster>();
-            
-            CreateUIElement(canvas, "Background", new Vector2(0, 0), new Vector2(1, 1), "").AddComponent<Image>().color = new Color(0.1f, 0.1f, 0.1f, 0.95f);
-            CreateUIElement(canvas, "Title", new Vector2(0, 0.8f), new Vector2(1, 1), "SB12 EKG Training");
-            CreateUIElement(canvas, "BodyText", new Vector2(0.1f, 0.3f), new Vector2(0.9f, 0.8f), "Welcome to the EKG electrode placement training.");
-            
-            Transform btnObj = CreateUIElement(canvas, "ContinueButton", new Vector2(0.35f, 0.05f), new Vector2(0.65f, 0.25f), "");
+
+            // Ensure RectTransform exists and configure
+            RectTransform rt = panelGO.GetComponent<RectTransform>();
+            if (rt == null)
+            {
+                rt = panelGO.AddComponent<RectTransform>();
+            }
+            rt.sizeDelta = new Vector2(160, 90);
+            rt.localScale = Vector3.one * 0.0015f;
+
+            if (!panelGO.GetComponent<GraphicRaycaster>()) panelGO.AddComponent<GraphicRaycaster>();
+            if (!panelGO.GetComponent<TrackedDeviceGraphicRaycaster>()) panelGO.AddComponent<TrackedDeviceGraphicRaycaster>();
+
+            Transform canvasTf = panelGO.transform;
+            CreateUIElement(canvasTf, "Background", new Vector2(0, 0), new Vector2(1, 1), "").gameObject.AddComponent<Image>().color = new Color(0.1f, 0.1f, 0.1f, 0.95f);
+            CreateUIElement(canvasTf, "Title", new Vector2(0, 0.8f), new Vector2(1, 1), "SB12 EKG Training");
+            CreateUIElement(canvasTf, "BodyText", new Vector2(0.1f, 0.3f), new Vector2(0.9f, 0.8f), "Welcome to the EKG electrode placement training.");
+
+            Transform btnObj = CreateUIElement(canvasTf, "ContinueButton", new Vector2(0.35f, 0.05f), new Vector2(0.65f, 0.25f), "");
             btnObj.gameObject.AddComponent<Image>().color = new Color(0.2f, 0.5f, 0.2f);
             btnObj.gameObject.AddComponent<Button>();
             CreateUIElement(btnObj, "Text", new Vector2(0, 0), new Vector2(1, 1), "Continue");
+
+            // Reparent UI to the north wall so it's visible on the wall
+            Transform wallNorth = GameObject.Find("RoomRoot/Environment/Wall_North")?.transform;
+            if (wallNorth != null)
+            {
+                panelGO.transform.SetParent(wallNorth);
+                // Mount at comfortable eye height and just in front of wall face
+                panelGO.transform.localPosition = new Vector3(0f, 1.4f, 0.055f);
+                panelGO.transform.localRotation = Quaternion.identity;
+                panelGO.transform.localScale = Vector3.one * 0.0015f;
+            }
         }
         
         private static Transform CreateUIElement(Transform parent, string name, Vector2 anchorMin, Vector2 anchorMax, string text)
         {
-            GameObject obj = new GameObject(name);
+            GameObject obj = new GameObject(name, typeof(RectTransform));
             obj.transform.SetParent(parent);
-            RectTransform rt = obj.AddComponent<RectTransform>();
+            RectTransform rt = obj.GetComponent<RectTransform>();
             rt.anchorMin = anchorMin;
             rt.anchorMax = anchorMax;
             rt.sizeDelta = Vector2.zero;
@@ -393,9 +461,24 @@ namespace SB12.Editor
                 t.fontSize = name == "Title" ? 5 : 3;
                 t.alignment = name == "Title" ? TextAnchor.UpperCenter : TextAnchor.MiddleCenter;
                 t.color = Color.white;
+                t.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
             }
             
             return obj.transform;
+        }
+
+        private static void ApplyColor(Transform tf, string key, Color color)
+        {
+            if (tf == null) return;
+            var rend = tf.GetComponent<Renderer>();
+            if (rend == null) return;
+            if (!matCache.TryGetValue(key, out var mat))
+            {
+                mat = new Material(Shader.Find("Standard"));
+                mat.color = color;
+                matCache[key] = mat;
+            }
+            rend.sharedMaterial = mat;
         }
         
         private static Transform CreatePrimitive(Transform parent, string name, PrimitiveType type, Vector3 pos, Quaternion rot, Vector3 scale)
@@ -418,21 +501,42 @@ namespace SB12.Editor
         
         private static void CreateLight(Transform parent, string name, LightType type, Vector3 pos, Quaternion rot)
         {
-            Transform light = FindOrCreateChild(parent, name);
-            light.position = pos;
-            light.rotation = rot;
-            
-            Light l = light.GetComponent<Light>() ?? light.gameObject.AddComponent<Light>();
-            l.type = type;
-            
-            if (type == LightType.Directional)
+            Transform lightTf = FindOrCreateChild(parent, name);
+            lightTf.position = pos;
+            lightTf.rotation = rot;
+
+            // Ensure a Light component exists. If something odd happens, recreate the GO.
+            Light l = lightTf.GetComponent<Light>();
+            if (l == null)
             {
-                l.intensity = 1.0f;
+                try
+                {
+                    l = lightTf.gameObject.AddComponent<Light>();
+                }
+                catch
+                {
+                    // Fallback: recreate node with a Light
+                    var go = new GameObject(name);
+                    go.transform.SetParent(parent);
+                    go.transform.position = pos;
+                    go.transform.rotation = rot;
+                    lightTf = go.transform;
+                    l = go.AddComponent<Light>();
+                }
             }
-            else
+
+            if (l != null)
             {
-                l.intensity = 0.5f;
-                l.range = 5.0f;
+                l.type = type;
+                if (type == LightType.Directional)
+                {
+                    l.intensity = 1.0f;
+                }
+                else
+                {
+                    l.intensity = 0.5f;
+                    l.range = 5.0f;
+                }
             }
         }
         
