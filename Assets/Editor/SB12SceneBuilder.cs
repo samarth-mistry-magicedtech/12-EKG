@@ -318,8 +318,9 @@ namespace SB12.Editor
                 Debug.Log("[SB12] Bed/Cart bounds unavailable, using fallback TrayTable position");
             }
 
-            trayTable.position = desiredPos;
-            trayTable.rotation = Quaternion.identity;
+            // Force exact placement as requested - use localPosition since TrayTable is child of RoomRoot
+            trayTable.localPosition = new Vector3(-0.3f, 0f, -0.3f);
+            trayTable.localRotation = Quaternion.identity;
             trayTable.localScale = Vector3.one;
             
             // Table top
@@ -344,13 +345,7 @@ namespace SB12.Editor
             // Tray on the table - positioned relative to table, not world coordinates
             Transform tray = FindOrCreateChild(trayTable, "Tray");
             tray.gameObject.isStatic = false;
-            float trayY = 1.0f;
-            // Use the actual Table_Top thickness to place tray just above
-            if (tableTop != null)
-            {
-                trayY = tableTop.localPosition.y + (tableTop.localScale.y * 0.5f) + 0.01f;
-            }
-            tray.localPosition = new Vector3(0f, trayY, 0f);
+            tray.localPosition = new Vector3(0f, 0.96f, 0f); // exact placement from YAML
             tray.localRotation = Quaternion.identity;
             tray.localScale = Vector3.one;
             Transform traySurf = CreatePrimitive(tray, "Tray_Surface", PrimitiveType.Cube, Vector3.zero, Quaternion.identity, new Vector3(0.7f, 0.02f, 0.5f));
@@ -361,7 +356,7 @@ namespace SB12.Editor
             if (trayCollider == null) trayCollider = traySurf.gameObject.AddComponent<BoxCollider>();
             trayCollider.isTrigger = false; // Solid surface for pads to rest on
 
-            Debug.Log($"[SB12] TrayTable at {trayTable.position}, Tray localPos {tray.localPosition}");
+            Debug.Log($"[SB12] TrayTable localPos {trayTable.localPosition}, Tray localPos {tray.localPosition}");
             
             Transform rack = FindOrCreateChild(cart, "Rack");
             rack.position = new Vector3(1.2f, 1.05f, -0.4f);
