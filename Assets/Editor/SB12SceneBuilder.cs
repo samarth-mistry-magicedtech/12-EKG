@@ -263,16 +263,101 @@ namespace SB12.Editor
             powerBtn.gameObject.AddComponent<XRSimpleInteractable>();
             ApplyColor(powerBtn, "mat_power", new Color32(200, 60, 60, 255));
             
-            Transform tray = FindOrCreateChild(cart, "Tray");
-            // Place tray centered on the cart top surface
-            tray.position = new Vector3(1.2f, 0.95f, 0.45f);
-            Transform traySurf = CreatePrimitive(tray, "Tray_Surface", PrimitiveType.Cube, Vector3.zero, Quaternion.identity, new Vector3(0.6f, 0.03f, 0.4f));
-            ApplyColor(traySurf, "mat_tray", new Color32(170, 170, 170, 255));
+            // Create separate table for tray beside the bed (not inside it)
+            Transform trayTable = FindOrCreateChild(root.transform, "TrayTable");
+            trayTable.gameObject.isStatic = false;
+            // Compute placement next to the Bed using its render bounds; fallback to a sensible default
+            Transform bedTf = GameObject.Find("RoomRoot/Bed")?.transform;
+            Vector3 desiredPos = new Vector3(-0.3f, 0f, -0.3f);
+            if (bedTf != null)
+            {
+                Bounds bb = new Bounds(bedTf.position, Vector3.zero);
+                bool hasBB = false;
+                var rends = bedTf.GetComponentsInChildren<Renderer>();
+                foreach (var r in rends)
+                {
+                    if (!hasBB) { bb = r.bounds; hasBB = true; }
+                    else { bb.Encapsulate(r.bounds); }
+                }
+                if (hasBB)
+                {
+                    Vector3 bedRight = bedTf.right; bedRight.y = 0f; if (bedRight.sqrMagnitude < 1e-4f) bedRight = Vector3.right; bedRight.Normalize();
+                    float halfTableWidth = 0.4f; // half of 0.8m table width
+                    float margin = 0.2f;         // 20cm clearance from bed edge
+                    float outward = Mathf.Max(bb.extents.x, bb.extents.z) + halfTableWidth + margin;
+                    Vector3 bedCenterXZ = new Vector3(bb.center.x, 0f, bb.center.z);
+                    desiredPos = bedCenterXZ + bedRight * outward;
+
+                    // If computed position still lies within bed bounds in XZ, push to opposite/right/forward sides
+                    System.Func<Vector3, bool> insideXZ = (pos) =>
+                        Mathf.Abs(pos.x - bb.center.x) < bb.extents.x && Mathf.Abs(pos.z - bb.center.z) < bb.extents.z;
+                    if (insideXZ(desiredPos))
+                    {
+                        desiredPos = bedCenterXZ - bedRight * outward; // opposite side
+                        if (insideXZ(desiredPos))
+                        {
+                            Vector3 bedFwd = bedTf.forward; bedFwd.y = 0f; if (bedFwd.sqrMagnitude < 1e-4f) bedFwd = Vector3.forward; bedFwd.Normalize();
+                            desiredPos = bedCenterXZ + bedFwd * outward; // try forward
+                            if (insideXZ(desiredPos))
+                            {
+                                desiredPos = bedCenterXZ - bedFwd * outward; // try backward
+                            }
+                        }
+                    }
+                    Debug.Log($"[SB12] Bed bb center={bb.center}, extents={bb.extents}, placing TrayTable at {desiredPos}");
+                }
+            }
+            trayTable.position = desiredPos;
+            trayTable.rotation = Quaternion.identity;
+            trayTable.localScale = Vector3.one;
+            
+            // Table top
+            Transform tableTop = CreatePrimitive(trayTable, "Table_Top", PrimitiveType.Cube, new Vector3(0f, 0.92f, 0f), Quaternion.identity, new Vector3(0.8f, 0.06f, 0.6f));
+            ApplyColor(tableTop, "mat_table", new Color32(139, 69, 19, 255)); // Brown wood color
+            
+            // Table legs
+            CreatePrimitive(trayTable, "Table_Leg_FL", PrimitiveType.Cube, new Vector3(-0.35f, 0.45f, -0.25f), Quaternion.identity, new Vector3(0.05f, 0.9f, 0.05f));
+            CreatePrimitive(trayTable, "Table_Leg_FR", PrimitiveType.Cube, new Vector3(0.35f, 0.45f, -0.25f), Quaternion.identity, new Vector3(0.05f, 0.9f, 0.05f));
+            CreatePrimitive(trayTable, "Table_Leg_BL", PrimitiveType.Cube, new Vector3(-0.35f, 0.45f, 0.25f), Quaternion.identity, new Vector3(0.05f, 0.9f, 0.05f));
+            CreatePrimitive(trayTable, "Table_Leg_BR", PrimitiveType.Cube, new Vector3(0.35f, 0.45f, 0.25f), Quaternion.identity, new Vector3(0.05f, 0.9f, 0.05f));
+            
+            // If there is an old tray under Cart, migrate it under TrayTable to avoid duplicates
+            Transform legacyTray = GameObject.Find("RoomRoot/Cart/Tray")?.transform;
+            if (legacyTray != null && legacyTray.parent != trayTable)
+            {
+                legacyTray.SetParent(trayTable, false);
+                legacyTray.name = "Tray";
+                Debug.Log("[SB12] Migrated legacy Cart/Tray to TrayTable/Tray");
+            }
+
+            // Tray on the table - positioned relative to table, not world coordinates
+            Transform tray = FindOrCreateChild(trayTable, "Tray");
+            tray.gameObject.isStatic = false;
+            float trayY = 1.0f;
+            // Use the actual Table_Top thickness to place tray just above
+            if (tableTop != null)
+            {
+                trayY = tableTop.localPosition.y + (tableTop.localScale.y * 0.5f) + 0.01f;
+            }
+            tray.localPosition = new Vector3(0f, trayY, 0f);
+            tray.localRotation = Quaternion.identity;
+            tray.localScale = Vector3.one;
+            Transform traySurf = CreatePrimitive(tray, "Tray_Surface", PrimitiveType.Cube, Vector3.zero, Quaternion.identity, new Vector3(0.7f, 0.02f, 0.5f));
+            ApplyColor(traySurf, "mat_tray", new Color32(40, 40, 40, 255)); // Dark surface for visibility
+            
+            // Ensure tray surface has proper collider for pad physics
+            BoxCollider trayCollider = traySurf.GetComponent<BoxCollider>();
+            if (trayCollider == null) trayCollider = traySurf.gameObject.AddComponent<BoxCollider>();
+            trayCollider.isTrigger = false; // Solid surface for pads to rest on
+
+            Debug.Log($"[SB12] TrayTable at {trayTable.position}, Tray localPos {tray.localPosition}");
             
             Transform rack = FindOrCreateChild(cart, "Rack");
             rack.position = new Vector3(1.2f, 1.05f, -0.4f);
             Transform rackBar = CreatePrimitive(rack, "Rack_Bar", PrimitiveType.Cylinder, Vector3.zero, Quaternion.Euler(0, 0, 90), new Vector3(0.01f, 0.7f, 0.01f));
             ApplyColor(rackBar, "mat_rack", new Color32(100, 100, 100, 255));
+            
+            Debug.Log("[SB12] Created separate tray table next to cart with dark surface for pad visibility");
         }
         
         private static void CreateMountPoints(GameObject root)
@@ -345,7 +430,12 @@ namespace SB12.Editor
         
         private static void CreatePads(GameObject root)
         {
-            Transform tray = GameObject.Find("RoomRoot/Cart/Tray")?.transform;
+            Transform tray = GameObject.Find("RoomRoot/TrayTable/Tray")?.transform;
+            if (tray == null) 
+            {
+                Debug.LogWarning("[SB12] Tray not found, trying fallback location...");
+                tray = GameObject.Find("RoomRoot/Cart/Tray")?.transform;
+            }
             if (tray == null) return;
             
             Transform padsParent = FindOrCreateChild(tray, "Pads");
@@ -366,36 +456,55 @@ namespace SB12.Editor
                     else
                     {
                         padObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                        padObj.transform.localScale = new Vector3(0.03f, 0.01f, 0.03f);
+                        padObj.transform.localScale = new Vector3(0.04f, 0.008f, 0.04f);
+                        // Apply white color to make pads visible on dark tray
+                        ApplyColor(padObj.transform, "mat_pad", new Color32(240, 240, 240, 255));
                     }
                     
                     padObj.name = padName;
                     pad = padObj.transform;
                     pad.SetParent(padsParent);
                     
+                    // Arrange pads in 2 rows of 5 with better spacing on larger tray
                     int row = i / 5;
                     int col = i % 5;
-                    float startX = -0.22f, spacingX = 0.11f;
-                    float startZ = -0.12f, spacingZ = 0.12f;
-                    pad.localPosition = new Vector3(startX + col * spacingX, 0.03f, startZ + row * spacingZ);
+                    float startX = -0.28f, spacingX = 0.14f;
+                    float startZ = -0.18f, spacingZ = 0.18f;
+                    pad.localPosition = new Vector3(startX + col * spacingX, 0.025f, startZ + row * spacingZ);
                     pad.localRotation = Quaternion.identity;
                     
-                    padObj.AddComponent<Rigidbody>();
-                    padObj.AddComponent<BoxCollider>();
+                    // Add physics components
+                    Rigidbody rb = padObj.AddComponent<Rigidbody>();
+                    rb.mass = 0.01f; // Light weight for realistic feel
+                    rb.useGravity = false; // Disable gravity initially to prevent falling
+                    rb.drag = 2f; // Add drag for more controlled movement
+                    rb.angularDrag = 5f; // Prevent excessive spinning
+                    
+                    // Use MeshCollider for accurate collision detection matching pad shape
+                    MeshCollider meshCol = padObj.GetComponent<MeshCollider>();
+                    if (meshCol == null) meshCol = padObj.AddComponent<MeshCollider>();
+                    meshCol.convex = true; // Required for Rigidbody interaction
+                    meshCol.isTrigger = false;
+                    
+                    // XR Grab setup with gravity control
                     XRGrabInteractable grab = padObj.AddComponent<XRGrabInteractable>();
                     grab.movementType = XRBaseInteractable.MovementType.VelocityTracking;
+                    grab.throwOnDetach = false; // Disable throwing to prevent pads flying away
+                    
+                    // Add script to enable gravity only when grabbed and released
+                    var padScript = padObj.AddComponent<PadGravityController>();
                 }
             }
         }
         
         private static void CreateUI(GameObject root)
         {
-            // Ensure UI root exists
-            Transform ui = FindOrCreateChild(root.transform, "UI");
+            // Prefer to parent under Wall_North; avoid creating a separate UI root
+            Transform fallbackParent = root.transform;
 
             // Find or create the panel GameObject; support both under UI and under Wall_North for idempotency
             GameObject panelGO = null;
-            Transform existing = ui.Find("SB12_Panel");
+            Transform existing = GameObject.Find("SB12_Panel")?.transform;
             if (existing != null) panelGO = existing.gameObject;
             if (panelGO == null)
             {
@@ -409,7 +518,7 @@ namespace SB12.Editor
             if (panelGO == null)
             {
                 panelGO = new GameObject("SB12_Panel", typeof(RectTransform));
-                panelGO.transform.SetParent(ui);
+                panelGO.transform.SetParent(fallbackParent);
                 createdCount++;
             }
 
@@ -430,7 +539,7 @@ namespace SB12.Editor
             // Initial size; will be overridden to fit wall if found
             rt.sizeDelta = new Vector2(1000, 600);
             rt.localScale = Vector3.one * 0.001f;
-            rt.pivot = new Vector2(0.5f, 0.0f); // bottom-center so requested Y=0 sits along the floor line
+            rt.pivot = new Vector2(0.5f, 0.5f); // center pivot so panel centers on wall
 
             if (!panelGO.GetComponent<GraphicRaycaster>()) panelGO.AddComponent<GraphicRaycaster>();
             if (!panelGO.GetComponent<TrackedDeviceGraphicRaycaster>()) panelGO.AddComponent<TrackedDeviceGraphicRaycaster>();
@@ -438,9 +547,9 @@ namespace SB12.Editor
             Transform canvasTf = panelGO.transform;
             CreateUIElement(canvasTf, "Background", new Vector2(0, 0), new Vector2(1, 1), "").gameObject.AddComponent<Image>().color = new Color(0.1f, 0.1f, 0.1f, 0.95f);
             var titleTf = CreateUIElement(canvasTf, "Title", new Vector2(0, 0.8f), new Vector2(1, 1), "SB12 EKG Training");
-            var bodyTf  = CreateUIElement(canvasTf, "BodyText", new Vector2(0.08f, 0.25f), new Vector2(0.92f, 0.78f), "Welcome to the EKG electrode placement training.");
+            var bodyTf  = CreateUIElement(canvasTf, "Body", new Vector2(0.08f, 0.25f), new Vector2(0.92f, 0.78f), "Welcome to the EKG electrode placement training.");
 
-            Transform btnObj = CreateUIElement(canvasTf, "ContinueButton", new Vector2(0.35f, 0.06f), new Vector2(0.65f, 0.18f), "");
+            Transform btnObj = CreateUIElement(canvasTf, "NextButton", new Vector2(0.35f, 0.06f), new Vector2(0.65f, 0.18f), "");
             btnObj.gameObject.AddComponent<Image>().color = new Color(0.2f, 0.5f, 0.2f);
             btnObj.gameObject.AddComponent<Button>();
             var btnTextTf = CreateUIElement(btnObj, "Text", new Vector2(0, 0), new Vector2(1, 1), "Continue");
@@ -453,14 +562,20 @@ namespace SB12.Editor
 
             // Fit and place the panel relative to the north wall
             Transform wallNorth = GameObject.Find("RoomRoot/Environment/Wall_North")?.transform;
-            float worldScale = 0.001f; // 1px = 1mm
+            if (wallNorth == null)
+            {
+                // Ensure the environment exists then try again
+                Debug.Log("[SB12] Wall_North not found. Creating environment and retrying.");
+                CreateEnvironment(root);
+                wallNorth = GameObject.Find("RoomRoot/Environment/Wall_North")?.transform;
+            }
+            float worldScale = 0.001f; // 1 canvas unit = 1 mm
             if (wallNorth != null)
             {
-                float wallW = wallNorth.localScale.x; // expected 6m
-                float wallH = wallNorth.localScale.y; // expected 3m
-                float targetW = wallW * 0.5f; // 50% of wall width
-                float targetH = wallH * 0.4f; // 40% of wall height
-                rt.sizeDelta = new Vector2(targetW / worldScale, targetH / worldScale);
+                // Match the panel size to the wall size (in meters). Convert meters -> canvas units using worldScale.
+                float wallW = wallNorth.localScale.x; // meters
+                float wallH = wallNorth.localScale.y; // meters
+                rt.sizeDelta = new Vector2(wallW / worldScale, wallH / worldScale);
 
                 // Parent to the wall and neutralize parent's non-uniform scale so panel keeps consistent world size
                 panelGO.transform.SetParent(wallNorth, false);
@@ -471,15 +586,138 @@ namespace SB12.Editor
                     worldScale / Mathf.Max(0.0001f, p.z)
                 );
                 panelGO.transform.localScale = inv;
-                panelGO.transform.localRotation = Quaternion.identity; // face same way as wall (into room)
-                panelGO.transform.localPosition = new Vector3(0f, 0f, 0.055f); // slight offset out of wall
+                // Ensure the panel's front (+Z) faces into the room (flip if needed)
+                panelGO.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+                // Center on the wall (local X=0,Y=0) and offset forward by 1m as requested
+                panelGO.transform.localPosition = new Vector3(0f, 0f, 1f);
+
+                // Use a VerticalLayoutGroup to layout children relative to the panel
+                var vlg = panelGO.GetComponent<VerticalLayoutGroup>();
+                if (vlg == null) vlg = panelGO.AddComponent<VerticalLayoutGroup>();
+                // Calculate padding as 5% of panel width/height
+                float pw = rt.sizeDelta.x;
+                float ph = rt.sizeDelta.y;
+                vlg.padding = new RectOffset(
+                    Mathf.RoundToInt(pw * 0.05f),
+                    Mathf.RoundToInt(pw * 0.05f),
+                    Mathf.RoundToInt(ph * 0.05f),
+                    Mathf.RoundToInt(ph * 0.05f)
+                );
+                vlg.spacing = Mathf.RoundToInt(ph * 0.02f);
+                vlg.childAlignment = TextAnchor.UpperCenter;
+                vlg.childControlWidth = true;
+                vlg.childControlHeight = true;
+                vlg.childForceExpandWidth = true;
+                vlg.childForceExpandHeight = false;
+
+                // Background should ignore layout and fill the panel
+                var bgRt = panelGO.transform.Find("Background")?.GetComponent<RectTransform>();
+                if (bgRt)
+                {
+                    var bgLE = bgRt.GetComponent<LayoutElement>();
+                    if (bgLE == null) bgLE = bgRt.gameObject.AddComponent<LayoutElement>();
+                    bgLE.ignoreLayout = true;
+                    bgRt.anchorMin = new Vector2(0f, 0f);
+                    bgRt.anchorMax = new Vector2(1f, 1f);
+                    bgRt.offsetMin = Vector2.zero; // left/bottom = 0
+                    bgRt.offsetMax = Vector2.zero; // right/top = 0
+                    bgRt.localScale = Vector3.one; // scale = (1,1,1)
+
+                    // Add VerticalLayoutGroup to Background for nice child layout
+                    var bgVlg = bgRt.GetComponent<VerticalLayoutGroup>();
+                    if (bgVlg == null) bgVlg = bgRt.gameObject.AddComponent<VerticalLayoutGroup>();
+                    float bgW = rt.sizeDelta.x;
+                    float bgH = rt.sizeDelta.y;
+                    bgVlg.padding = new RectOffset(
+                        Mathf.RoundToInt(bgW * 0.08f), // left
+                        Mathf.RoundToInt(bgW * 0.08f), // right
+                        Mathf.RoundToInt(bgH * 0.06f), // top
+                        Mathf.RoundToInt(bgH * 0.06f)  // bottom
+                    );
+                    bgVlg.spacing = Mathf.RoundToInt(bgH * 0.03f);
+                    bgVlg.childAlignment = TextAnchor.UpperCenter;
+                    bgVlg.childControlWidth = true;
+                    bgVlg.childControlHeight = true;
+                    bgVlg.childForceExpandWidth = true;
+                    bgVlg.childForceExpandHeight = false;
+                }
+
+                // Title row (make child of Background)
+                var titleTf2 = panelGO.transform.Find("Title");
+                var titleRt = titleTf2 ? titleTf2.GetComponent<RectTransform>() : null;
+                if (titleRt)
+                {
+                    if (bgRt) titleRt.SetParent(bgRt, false);
+                    titleRt.localScale = Vector3.one; // scale = (1,1,1)
+                    var le = titleRt.GetComponent<LayoutElement>();
+                    if (le == null) le = titleRt.gameObject.AddComponent<LayoutElement>();
+                    le.minHeight = ph * 0.12f;
+                    le.preferredHeight = ph * 0.15f;
+                    le.flexibleHeight = 0f;
+                }
+
+                // Body row (make child of Background)
+                var bodyTf2 = panelGO.transform.Find("Body");
+                if (bodyTf2 == null) bodyTf2 = panelGO.transform.Find("BodyText"); // fallback for old name
+                var bodyRt = bodyTf2 ? bodyTf2.GetComponent<RectTransform>() : null;
+                if (bodyRt)
+                {
+                    if (bgRt) bodyRt.SetParent(bgRt, false);
+                    bodyRt.localScale = Vector3.one; // scale = (1,1,1)
+                    var le = bodyRt.GetComponent<LayoutElement>();
+                    if (le == null) le = bodyRt.gameObject.AddComponent<LayoutElement>();
+                    le.minHeight = ph * 0.50f;
+                    le.preferredHeight = ph * 0.60f;
+                    le.flexibleHeight = 1f;
+                }
+
+                // Button row (make child of Background)
+                var btnTf2 = panelGO.transform.Find("NextButton");
+                if (btnTf2 == null) btnTf2 = panelGO.transform.Find("ContinueButton"); // fallback for old name
+                var btnRt = btnTf2 ? btnTf2.GetComponent<RectTransform>() : null;
+                if (btnRt)
+                {
+                    if (bgRt) btnRt.SetParent(bgRt, false);
+                    btnRt.localScale = Vector3.one; // scale = (1,1,1)
+                    var le = btnRt.GetComponent<LayoutElement>();
+                    if (le == null) le = btnRt.gameObject.AddComponent<LayoutElement>();
+                    le.minHeight = ph * 0.08f;
+                    le.preferredHeight = ph * 0.10f;
+                    le.flexibleHeight = 0f;
+                    le.preferredWidth = ph * 0.25f; // Make button narrower than full width
+                }
+
+                // Scale fonts relative to panel height for better readability
+                var titleText2 = titleTf2 ? titleTf2.GetComponent<Text>() : null;
+                if (titleText2) 
+                {
+                    titleText2.fontSize = Mathf.RoundToInt(ph * 0.05f);
+                    titleText2.alignment = TextAnchor.MiddleCenter;
+                    titleText2.fontStyle = FontStyle.Bold;
+                }
+                var bodyText2 = bodyTf2 ? bodyTf2.GetComponent<Text>() : null;
+                if (bodyText2) 
+                {
+                    bodyText2.fontSize = Mathf.RoundToInt(ph * 0.03f);
+                    bodyText2.alignment = TextAnchor.UpperLeft;
+                    bodyText2.fontStyle = FontStyle.Normal;
+                }
+                var btnText2 = btnTf2 ? btnTf2.GetComponent<Text>() : null;
+                if (btnText2) 
+                {
+                    btnText2.fontSize = Mathf.RoundToInt(ph * 0.04f);
+                    btnText2.alignment = TextAnchor.MiddleCenter;
+                    btnText2.fontStyle = FontStyle.Bold;
+                }
+                Debug.Log($"[SB12] SB12_Panel parented to Wall_North. localPos={panelGO.transform.localPosition}, localScale={panelGO.transform.localScale}, sizeDelta={rt.sizeDelta}");
             }
             else
             {
                 // Fallback world placement centered to room
-                panelGO.transform.SetParent(ui, false);
+                panelGO.transform.SetParent(fallbackParent, false);
                 panelGO.transform.position = new Vector3(0f, 1.5f, 2.9f);
                 panelGO.transform.rotation = Quaternion.Euler(0, 180f, 0);
+                Debug.Log("[SB12] Wall_North still not found. Placed SB12_Panel under RoomRoot as fallback.");
             }
         }
         
@@ -500,7 +738,7 @@ namespace SB12.Editor
                 t.fontSize = name == "Title" ? 5 : 3;
                 t.alignment = name == "Title" ? TextAnchor.UpperCenter : TextAnchor.MiddleCenter;
                 t.color = Color.white;
-                t.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+                t.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             }
             
             return obj.transform;
