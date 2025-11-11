@@ -263,50 +263,61 @@ namespace SB12.Editor
             powerBtn.gameObject.AddComponent<XRSimpleInteractable>();
             ApplyColor(powerBtn, "mat_power", new Color32(200, 60, 60, 255));
             
-            // Create separate table for tray beside the bed (not inside it)
+            // Create separate table for tray beside the bed/cart (not inside it)
             Transform trayTable = FindOrCreateChild(root.transform, "TrayTable");
             trayTable.gameObject.isStatic = false;
-            // Compute placement next to the Bed using its render bounds; fallback to a sensible default
+            // Prefer to place next to the Cart; fall back to Bed; otherwise use a fixed offset
             Transform bedTf = GameObject.Find("RoomRoot/Bed")?.transform;
+            Transform cartTf = GameObject.Find("RoomRoot/Cart")?.transform;
             Vector3 desiredPos = new Vector3(-0.3f, 0f, -0.3f);
-            if (bedTf != null)
-            {
-                Bounds bb = new Bounds(bedTf.position, Vector3.zero);
-                bool hasBB = false;
-                var rends = bedTf.GetComponentsInChildren<Renderer>();
-                foreach (var r in rends)
-                {
-                    if (!hasBB) { bb = r.bounds; hasBB = true; }
-                    else { bb.Encapsulate(r.bounds); }
-                }
-                if (hasBB)
-                {
-                    Vector3 bedRight = bedTf.right; bedRight.y = 0f; if (bedRight.sqrMagnitude < 1e-4f) bedRight = Vector3.right; bedRight.Normalize();
-                    float halfTableWidth = 0.4f; // half of 0.8m table width
-                    float margin = 0.2f;         // 20cm clearance from bed edge
-                    float outward = Mathf.Max(bb.extents.x, bb.extents.z) + halfTableWidth + margin;
-                    Vector3 bedCenterXZ = new Vector3(bb.center.x, 0f, bb.center.z);
-                    desiredPos = bedCenterXZ + bedRight * outward;
 
-                    // If computed position still lies within bed bounds in XZ, push to opposite/right/forward sides
-                    System.Func<Vector3, bool> insideXZ = (pos) =>
-                        Mathf.Abs(pos.x - bb.center.x) < bb.extents.x && Mathf.Abs(pos.z - bb.center.z) < bb.extents.z;
-                    if (insideXZ(desiredPos))
-                    {
-                        desiredPos = bedCenterXZ - bedRight * outward; // opposite side
-                        if (insideXZ(desiredPos))
-                        {
-                            Vector3 bedFwd = bedTf.forward; bedFwd.y = 0f; if (bedFwd.sqrMagnitude < 1e-4f) bedFwd = Vector3.forward; bedFwd.Normalize();
-                            desiredPos = bedCenterXZ + bedFwd * outward; // try forward
-                            if (insideXZ(desiredPos))
-                            {
-                                desiredPos = bedCenterXZ - bedFwd * outward; // try backward
-                            }
-                        }
-                    }
-                    Debug.Log($"[SB12] Bed bb center={bb.center}, extents={bb.extents}, placing TrayTable at {desiredPos}");
-                }
+            // Helper to get world-space bounds for a root transform
+            System.Func<Transform, (Bounds, bool)> getBounds = (tf) => {
+                if (tf == null) return (new Bounds(Vector3.zero, Vector3.zero), false);
+                var rends = tf.GetComponentsInChildren<Renderer>();
+                bool hasAny = false; Bounds b = new Bounds(tf.position, Vector3.zero);
+                foreach (var r in rends) { if (!hasAny) { b = r.bounds; hasAny = true; } else { b.Encapsulate(r.bounds); } }
+                return (b, hasAny);
+            };
+            var (bedB, bedHas) = getBounds(bedTf);
+            var (cartB, cartHas) = getBounds(cartTf);
+
+            float halfTableWidth = 0.4f; // half of 0.8m table width
+            float margin = 0.25f;
+
+            if (cartHas)
+            {
+                Vector3 cartRight = cartTf.right; cartRight.y = 0f; if (cartRight.sqrMagnitude < 1e-4f) cartRight = Vector3.right; cartRight.Normalize();
+                float outward = Mathf.Max(cartB.extents.x, cartB.extents.z) + halfTableWidth + margin;
+                Vector3 cartCenterXZ = new Vector3(cartB.center.x, 0f, cartB.center.z);
+                Vector3 candidate = cartCenterXZ + cartRight * outward;
+
+                // If overlaps bed, try opposite/right/forward alternatives
+                System.Func<Vector3, bool> insideBed = (pos) => bedHas && Mathf.Abs(pos.x - bedB.center.x) < bedB.extents.x && Mathf.Abs(pos.z - bedB.center.z) < bedB.extents.z;
+                if (insideBed(candidate)) candidate = cartCenterXZ - cartRight * outward;
+                if (insideBed(candidate)) { Vector3 fwd = cartTf.forward; fwd.y = 0f; if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward; fwd.Normalize(); candidate = cartCenterXZ + fwd * outward; }
+                if (insideBed(candidate)) { Vector3 fwd = cartTf.forward; fwd.y = 0f; if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward; fwd.Normalize(); candidate = cartCenterXZ - fwd * outward; }
+                desiredPos = candidate;
+                Debug.Log($"[SB12] Placing TrayTable next to Cart at {desiredPos}");
             }
+            else if (bedHas)
+            {
+                Vector3 bedRight = bedTf.right; bedRight.y = 0f; if (bedRight.sqrMagnitude < 1e-4f) bedRight = Vector3.right; bedRight.Normalize();
+                float outward = Mathf.Max(bedB.extents.x, bedB.extents.z) + halfTableWidth + margin;
+                Vector3 bedCenterXZ = new Vector3(bedB.center.x, 0f, bedB.center.z);
+                Vector3 candidate = bedCenterXZ + bedRight * outward;
+                System.Func<Vector3, bool> insideBed = (pos) => Mathf.Abs(pos.x - bedB.center.x) < bedB.extents.x && Mathf.Abs(pos.z - bedB.center.z) < bedB.extents.z;
+                if (insideBed(candidate)) candidate = bedCenterXZ - bedRight * outward;
+                if (insideBed(candidate)) { Vector3 fwd = bedTf.forward; fwd.y = 0f; if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward; fwd.Normalize(); candidate = bedCenterXZ + fwd * outward; }
+                if (insideBed(candidate)) { Vector3 fwd = bedTf.forward; fwd.y = 0f; if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward; fwd.Normalize(); candidate = bedCenterXZ - fwd * outward; }
+                desiredPos = candidate;
+                Debug.Log($"[SB12] Placing TrayTable next to Bed at {desiredPos}");
+            }
+            else
+            {
+                Debug.Log("[SB12] Bed/Cart bounds unavailable, using fallback TrayTable position");
+            }
+
             trayTable.position = desiredPos;
             trayTable.rotation = Quaternion.identity;
             trayTable.localScale = Vector3.one;
