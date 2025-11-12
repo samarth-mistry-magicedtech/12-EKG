@@ -61,6 +61,8 @@ namespace SB12.Editor
                 
                 EditorUtility.DisplayProgressBar("SB12 Builder", "Creating cart and equipment...", 0.5f);
                 CreateCart(root);
+                EditorUtility.DisplayProgressBar("SB12 Builder", "Creating tray table...", 0.55f);
+                CreateTrayTable(root);
                 
                 EditorUtility.DisplayProgressBar("SB12 Builder", "Creating mount points...", 0.6f);
                 CreateMountPoints(root);
@@ -70,6 +72,10 @@ namespace SB12.Editor
                 
                 EditorUtility.DisplayProgressBar("SB12 Builder", "Creating UI...", 0.8f);
                 CreateUI(root);
+                EditorUtility.DisplayProgressBar("SB12 Builder", "Applying materials...", 0.85f);
+                ApplyThemeMaterials(root);
+                EditorUtility.DisplayProgressBar("SB12 Builder", "Generating common materials...", 0.87f);
+                GenerateRemapMaterials();
                 
                 EditorUtility.DisplayProgressBar("SB12 Builder", "Generating scripts...", 0.9f);
                 GenerateRuntimeScripts();
@@ -263,107 +269,81 @@ namespace SB12.Editor
             powerBtn.gameObject.AddComponent<XRSimpleInteractable>();
             ApplyColor(powerBtn, "mat_power", new Color32(200, 60, 60, 255));
             
-            // Create separate table for tray beside the bed/cart (not inside it)
-            Transform trayTable = FindOrCreateChild(root.transform, "TrayTable");
-            trayTable.gameObject.isStatic = false;
-            // Prefer to place next to the Cart; fall back to Bed; otherwise use a fixed offset
-            Transform bedTf = GameObject.Find("RoomRoot/Bed")?.transform;
-            Transform cartTf = GameObject.Find("RoomRoot/Cart")?.transform;
-            Vector3 desiredPos = new Vector3(-0.3f, 0f, -0.3f);
+            // Rack and rack bar intentionally omitted per request
+            Transform existingRack = cart.Find("Rack");
+            if (existingRack != null)
+            {
+                UnityEngine.Object.DestroyImmediate(existingRack.gameObject);
+            }
+        }
+        
+        private static void CreateTrayTable(GameObject root)
+        {
+            Transform existing = GameObject.Find("RoomRoot/TrayTable")?.transform;
+            if (existing != null)
+            {
+                UnityEngine.Object.DestroyImmediate(existing.gameObject);
+            }
+            Transform tableRoot = new GameObject("TrayTable").transform;
+            tableRoot.SetParent(root.transform);
+            createdCount++;
 
-            // Helper to get world-space bounds for a root transform
-            System.Func<Transform, (Bounds, bool)> getBounds = (tf) => {
-                if (tf == null) return (new Bounds(Vector3.zero, Vector3.zero), false);
-                var rends = tf.GetComponentsInChildren<Renderer>();
-                bool hasAny = false; Bounds b = new Bounds(tf.position, Vector3.zero);
-                foreach (var r in rends) { if (!hasAny) { b = r.bounds; hasAny = true; } else { b.Encapsulate(r.bounds); } }
-                return (b, hasAny);
+            Vector3 tableSize = new Vector3(0.9f, 0.06f, 0.6f);
+            float legHeight = 0.8f;
+            Vector3 legSize = new Vector3(0.05f, legHeight, 0.05f);
+            Vector3 traySize = new Vector3(0.7f, 0.03f, 0.5f);
+
+            Vector3[] candidates = new Vector3[]
+            {
+                new Vector3(-1.2f, 0f, 0.9f),
+                new Vector3(-1.2f, 0f, -0.9f),
+                new Vector3(0f, 0f, 1.2f),
+                new Vector3(0f, 0f, -1.2f),
+                new Vector3(1.2f, 0f, -1.2f),
             };
-            var (bedB, bedHas) = getBounds(bedTf);
-            var (cartB, cartHas) = getBounds(cartTf);
 
-            float halfTableWidth = 0.4f; // half of 0.8m table width
-            float margin = 0.25f;
+            float totalHeight = legHeight + tableSize.y + traySize.y;
+            Vector3 halfExtents = new Vector3(Mathf.Max(tableSize.x, traySize.x) * 0.5f + 0.05f, totalHeight * 0.5f, Mathf.Max(tableSize.z, traySize.z) * 0.5f + 0.05f);
 
-            if (cartHas)
+            Vector3 chosenXZ = candidates[0];
+            foreach (var c in candidates)
             {
-                Vector3 cartRight = cartTf.right; cartRight.y = 0f; if (cartRight.sqrMagnitude < 1e-4f) cartRight = Vector3.right; cartRight.Normalize();
-                float outward = Mathf.Max(cartB.extents.x, cartB.extents.z) + halfTableWidth + margin;
-                Vector3 cartCenterXZ = new Vector3(cartB.center.x, 0f, cartB.center.z);
-                Vector3 candidate = cartCenterXZ + cartRight * outward;
-
-                // If overlaps bed, try opposite/right/forward alternatives
-                System.Func<Vector3, bool> insideBed = (pos) => bedHas && Mathf.Abs(pos.x - bedB.center.x) < bedB.extents.x && Mathf.Abs(pos.z - bedB.center.z) < bedB.extents.z;
-                if (insideBed(candidate)) candidate = cartCenterXZ - cartRight * outward;
-                if (insideBed(candidate)) { Vector3 fwd = cartTf.forward; fwd.y = 0f; if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward; fwd.Normalize(); candidate = cartCenterXZ + fwd * outward; }
-                if (insideBed(candidate)) { Vector3 fwd = cartTf.forward; fwd.y = 0f; if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward; fwd.Normalize(); candidate = cartCenterXZ - fwd * outward; }
-                desiredPos = candidate;
-                Debug.Log($"[SB12] Placing TrayTable next to Cart at {desiredPos}");
-            }
-            else if (bedHas)
-            {
-                Vector3 bedRight = bedTf.right; bedRight.y = 0f; if (bedRight.sqrMagnitude < 1e-4f) bedRight = Vector3.right; bedRight.Normalize();
-                float outward = Mathf.Max(bedB.extents.x, bedB.extents.z) + halfTableWidth + margin;
-                Vector3 bedCenterXZ = new Vector3(bedB.center.x, 0f, bedB.center.z);
-                Vector3 candidate = bedCenterXZ + bedRight * outward;
-                System.Func<Vector3, bool> insideBed = (pos) => Mathf.Abs(pos.x - bedB.center.x) < bedB.extents.x && Mathf.Abs(pos.z - bedB.center.z) < bedB.extents.z;
-                if (insideBed(candidate)) candidate = bedCenterXZ - bedRight * outward;
-                if (insideBed(candidate)) { Vector3 fwd = bedTf.forward; fwd.y = 0f; if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward; fwd.Normalize(); candidate = bedCenterXZ + fwd * outward; }
-                if (insideBed(candidate)) { Vector3 fwd = bedTf.forward; fwd.y = 0f; if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward; fwd.Normalize(); candidate = bedCenterXZ - fwd * outward; }
-                desiredPos = candidate;
-                Debug.Log($"[SB12] Placing TrayTable next to Bed at {desiredPos}");
-            }
-            else
-            {
-                Debug.Log("[SB12] Bed/Cart bounds unavailable, using fallback TrayTable position");
+                Vector3 center = new Vector3(c.x, halfExtents.y, c.z);
+                var hits = Physics.OverlapBox(center, halfExtents, Quaternion.identity);
+                bool clear = true;
+                for (int i = 0; i < hits.Length; i++)
+                {
+                    var h = hits[i];
+                    if (h == null) continue;
+                    string n = h.name;
+                    if (n == "Floor") continue;
+                    clear = false;
+                    break;
+                }
+                if (clear)
+                {
+                    chosenXZ = c;
+                    break;
+                }
             }
 
-            // Force exact placement as requested - use localPosition since TrayTable is child of RoomRoot
-            trayTable.localPosition = new Vector3(-0.3f, 0f, -0.3f);
-            trayTable.localRotation = Quaternion.identity;
-            trayTable.localScale = Vector3.one;
-            
-            // Table top
-            Transform tableTop = CreatePrimitive(trayTable, "Table_Top", PrimitiveType.Cube, new Vector3(0f, 0.92f, 0f), Quaternion.identity, new Vector3(0.8f, 0.06f, 0.6f));
-            ApplyColor(tableTop, "mat_table", new Color32(139, 69, 19, 255)); // Brown wood color
-            
-            // Table legs
-            CreatePrimitive(trayTable, "Table_Leg_FL", PrimitiveType.Cube, new Vector3(-0.35f, 0.45f, -0.25f), Quaternion.identity, new Vector3(0.05f, 0.9f, 0.05f));
-            CreatePrimitive(trayTable, "Table_Leg_FR", PrimitiveType.Cube, new Vector3(0.35f, 0.45f, -0.25f), Quaternion.identity, new Vector3(0.05f, 0.9f, 0.05f));
-            CreatePrimitive(trayTable, "Table_Leg_BL", PrimitiveType.Cube, new Vector3(-0.35f, 0.45f, 0.25f), Quaternion.identity, new Vector3(0.05f, 0.9f, 0.05f));
-            CreatePrimitive(trayTable, "Table_Leg_BR", PrimitiveType.Cube, new Vector3(0.35f, 0.45f, 0.25f), Quaternion.identity, new Vector3(0.05f, 0.9f, 0.05f));
-            
-            // If there is an old tray under Cart, migrate it under TrayTable to avoid duplicates
-            Transform legacyTray = GameObject.Find("RoomRoot/Cart/Tray")?.transform;
-            if (legacyTray != null && legacyTray.parent != trayTable)
-            {
-                legacyTray.SetParent(trayTable, false);
-                legacyTray.name = "Tray";
-                Debug.Log("[SB12] Migrated legacy Cart/Tray to TrayTable/Tray");
-            }
+            float topCenterY = legHeight + tableSize.y * 0.5f;
+            Vector3 topPos = new Vector3(chosenXZ.x, topCenterY, chosenXZ.z);
+            Transform top = CreatePrimitive(tableRoot, "Table_Top", PrimitiveType.Cube, topPos, Quaternion.identity, tableSize);
+            ApplyColor(top, "mat_traytable_top", new Color32(150, 150, 150, 255));
 
-            // Tray on the table - positioned relative to table, not world coordinates
-            Transform tray = FindOrCreateChild(trayTable, "Tray");
-            tray.gameObject.isStatic = false;
-            tray.localPosition = new Vector3(0f, 0.96f, 0f); // exact placement from YAML
-            tray.localRotation = Quaternion.identity;
-            tray.localScale = Vector3.one;
-            Transform traySurf = CreatePrimitive(tray, "Tray_Surface", PrimitiveType.Cube, Vector3.zero, Quaternion.identity, new Vector3(0.7f, 0.02f, 0.5f));
-            ApplyColor(traySurf, "mat_tray", new Color32(40, 40, 40, 255)); // Dark surface for visibility
-            
-            // Ensure tray surface has proper collider for pad physics
-            BoxCollider trayCollider = traySurf.GetComponent<BoxCollider>();
-            if (trayCollider == null) trayCollider = traySurf.gameObject.AddComponent<BoxCollider>();
-            trayCollider.isTrigger = false; // Solid surface for pads to rest on
+            float legY = legHeight * 0.5f;
+            float offX = tableSize.x * 0.5f - legSize.x * 0.5f;
+            float offZ = tableSize.z * 0.5f - legSize.z * 0.5f;
+            CreatePrimitive(tableRoot, "Table_Leg_FL", PrimitiveType.Cube, new Vector3(topPos.x + offX, legY, topPos.z + offZ), Quaternion.identity, legSize);
+            CreatePrimitive(tableRoot, "Table_Leg_FR", PrimitiveType.Cube, new Vector3(topPos.x + offX, legY, topPos.z - offZ), Quaternion.identity, legSize);
+            CreatePrimitive(tableRoot, "Table_Leg_BL", PrimitiveType.Cube, new Vector3(topPos.x - offX, legY, topPos.z + offZ), Quaternion.identity, legSize);
+            CreatePrimitive(tableRoot, "Table_Leg_BR", PrimitiveType.Cube, new Vector3(topPos.x - offX, legY, topPos.z - offZ), Quaternion.identity, legSize);
 
-            Debug.Log($"[SB12] TrayTable localPos {trayTable.localPosition}, Tray localPos {tray.localPosition}");
-            
-            Transform rack = FindOrCreateChild(cart, "Rack");
-            rack.position = new Vector3(1.2f, 1.05f, -0.4f);
-            Transform rackBar = CreatePrimitive(rack, "Rack_Bar", PrimitiveType.Cylinder, Vector3.zero, Quaternion.Euler(0, 0, 90), new Vector3(0.01f, 0.7f, 0.01f));
-            ApplyColor(rackBar, "mat_rack", new Color32(100, 100, 100, 255));
-            
-            Debug.Log("[SB12] Created separate tray table next to cart with dark surface for pad visibility");
+            float trayCenterY = topCenterY + tableSize.y * 0.5f + traySize.y * 0.5f;
+            Transform tray = CreatePrimitive(tableRoot, "Tray", PrimitiveType.Cube, new Vector3(topPos.x, trayCenterY, topPos.z), Quaternion.identity, traySize);
+            ApplyColor(tray, "mat_tray", new Color32(60, 60, 60, 255));
+            if (tray.GetComponent<Collider>() == null) tray.gameObject.AddComponent<BoxCollider>();
         }
         
         private static void CreateMountPoints(GameObject root)
@@ -445,16 +425,19 @@ namespace SB12.Editor
             if (tray == null) return;
             
             Transform padsParent = FindOrCreateChild(tray, "Pads");
+            // Ensure pads are positioned relative to the tray, not world origin
+            padsParent.localPosition = Vector3.zero;
+            padsParent.localRotation = Quaternion.identity;
+            padsParent.localScale = Vector3.one;
             GameObject padPrefab = AssetDatabase.LoadAssetAtPath<GameObject>($"{ASSETS_FOLDER}/EKG Pad With Back.fbx");
             
             for (int i = 0; i < 10; i++)
             {
                 string padName = $"Pad_{(i + 1):D2}";
                 Transform pad = padsParent.Find(padName);
-                
+                GameObject padObj = null;
                 if (pad == null)
                 {
-                    GameObject padObj;
                     if (padPrefab != null)
                     {
                         padObj = (GameObject)PrefabUtility.InstantiatePrefab(padPrefab, padsParent);
@@ -466,40 +449,75 @@ namespace SB12.Editor
                         // Apply white color to make pads visible on dark tray
                         ApplyColor(padObj.transform, "mat_pad", new Color32(240, 240, 240, 255));
                     }
-                    
                     padObj.name = padName;
                     pad = padObj.transform;
-                    pad.SetParent(padsParent);
-                    
-                    // Arrange pads in 2 rows of 5 with better spacing on larger tray
-                    int row = i / 5;
-                    int col = i % 5;
-                    float startX = -0.28f, spacingX = 0.14f;
-                    float startZ = -0.18f, spacingZ = 0.18f;
-                    pad.localPosition = new Vector3(startX + col * spacingX, 0.025f, startZ + row * spacingZ);
-                    pad.localRotation = Quaternion.identity;
-                    
-                    // Add physics components
+                    pad.SetParent(padsParent, false);
+
+                    // Add physics components when creating
                     Rigidbody rb = padObj.AddComponent<Rigidbody>();
                     rb.mass = 0.01f; // Light weight for realistic feel
                     rb.useGravity = false; // Disable gravity initially to prevent falling
                     rb.drag = 2f; // Add drag for more controlled movement
                     rb.angularDrag = 5f; // Prevent excessive spinning
-                    
+
                     // Use MeshCollider for accurate collision detection matching pad shape
                     MeshCollider meshCol = padObj.GetComponent<MeshCollider>();
                     if (meshCol == null) meshCol = padObj.AddComponent<MeshCollider>();
                     meshCol.convex = true; // Required for Rigidbody interaction
                     meshCol.isTrigger = false;
-                    
+
                     // XR Grab setup with gravity control
                     XRGrabInteractable grab = padObj.AddComponent<XRGrabInteractable>();
                     grab.movementType = XRBaseInteractable.MovementType.VelocityTracking;
                     grab.throwOnDetach = false; // Disable throwing to prevent pads flying away
-                    
+
                     // Add script to enable gravity only when grabbed and released
                     var padScript = padObj.AddComponent<PadGravityController>();
                 }
+                else
+                {
+                    // Ensure correct parent and transform basis even for existing pads
+                    pad.SetParent(padsParent, false);
+                    padObj = pad.gameObject;
+                }
+
+                // Arrange pads in 2 rows of 5 on the tray for both existing and newly created
+                int row = i / 5;
+                int col = i % 5;
+                float startX = -0.28f, spacingX = 0.14f;
+                float startZ = -0.18f, spacingZ = 0.18f;
+                pad.localPosition = new Vector3(startX + col * spacingX, 0f, startZ + row * spacingZ);
+                pad.localRotation = Quaternion.identity;
+                // For safety, keep scale as-is from prefab but ensure uniform if primitive
+                if (padPrefab == null)
+                {
+                    pad.localScale = new Vector3(0.04f, 0.008f, 0.04f);
+                }
+                PlacePadOnTraySurface(pad, tray, 0.001f);
+            }
+        }
+
+        private static void PlacePadOnTraySurface(Transform pad, Transform tray, float margin)
+        {
+            if (pad == null || tray == null) return;
+            var rend = pad.GetComponentInChildren<Renderer>();
+            if (rend != null)
+            {
+                float trayTopWorldY = tray.position.y + (tray.localScale.y * 0.5f);
+                float bottomWorldY = rend.bounds.min.y;
+                float delta = (trayTopWorldY + margin) - bottomWorldY;
+                if (Mathf.Abs(delta) > 1e-5f)
+                {
+                    var wp = pad.position;
+                    wp.y += delta;
+                    pad.position = wp;
+                }
+            }
+            else
+            {
+                var lp = pad.localPosition;
+                lp.y = (tray.localScale.y * 0.5f) + (pad.localScale.y * 0.5f) + margin;
+                pad.localPosition = lp;
             }
         }
         
@@ -755,13 +773,254 @@ namespace SB12.Editor
             if (tf == null) return;
             var rend = tf.GetComponent<Renderer>();
             if (rend == null) return;
-            if (!matCache.TryGetValue(key, out var mat))
+            var mat = EnsureMaterialAsset(key, color);
+            var arr = rend.sharedMaterials;
+            if (arr != null && arr.Length > 1)
             {
-                mat = new Material(Shader.Find("Standard"));
-                mat.color = color;
-                matCache[key] = mat;
+                var mats = new Material[arr.Length];
+                for (int i = 0; i < arr.Length; i++) mats[i] = mat;
+                rend.sharedMaterials = mats;
             }
-            rend.sharedMaterial = mat;
+            else
+            {
+                rend.sharedMaterial = mat;
+            }
+        }
+
+        private static Material EnsureMaterialAsset(string key, Color color)
+        {
+            if (matCache.TryGetValue(key, out var cached) && cached != null) return cached;
+            string baseFolder = "Assets/SB12";
+            string matsFolder = "Assets/SB12/Materials";
+            if (!AssetDatabase.IsValidFolder(baseFolder)) AssetDatabase.CreateFolder("Assets", "SB12");
+            if (!AssetDatabase.IsValidFolder(matsFolder)) AssetDatabase.CreateFolder(baseFolder, "Materials");
+            string path = $"{matsFolder}/{key}.mat";
+            var asset = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (asset == null)
+            {
+                asset = new Material(Shader.Find("Standard"));
+                asset.color = color;
+                AssetDatabase.CreateAsset(asset, path);
+                AssetDatabase.SaveAssets();
+            }
+            matCache[key] = asset;
+            return asset;
+        }
+        
+        private static void SetRendererColor(Transform root, string key, Color color, bool includeChildren)
+        {
+            if (root == null) return;
+            var mat = EnsureMaterialAsset(key, color);
+            if (includeChildren)
+            {
+                var rends = root.GetComponentsInChildren<Renderer>(true);
+                for (int i = 0; i < rends.Length; i++)
+                {
+                    var r = rends[i];
+                    if (r == null) continue;
+                    var arr = r.sharedMaterials;
+                    if (arr != null && arr.Length > 1)
+                    {
+                        var mats = new Material[arr.Length];
+                        for (int j = 0; j < arr.Length; j++) mats[j] = mat;
+                        r.sharedMaterials = mats;
+                    }
+                    else
+                    {
+                        r.sharedMaterial = mat;
+                    }
+                }
+            }
+            else
+            {
+                var r = root.GetComponent<Renderer>();
+                if (r != null)
+                {
+                    var arr = r.sharedMaterials;
+                    if (arr != null && arr.Length > 1)
+                    {
+                        var mats = new Material[arr.Length];
+                        for (int j = 0; j < arr.Length; j++) mats[j] = mat;
+                        r.sharedMaterials = mats;
+                    }
+                    else
+                    {
+                        r.sharedMaterial = mat;
+                    }
+                }
+            }
+        }
+
+        private static void ApplyThemeMaterials(GameObject root)
+        {
+            if (root == null) return;
+            Color32 wallCol = new Color32(245, 229, 211, 255);
+            Color32 floorCol = new Color32(180, 185, 192, 255);
+            Color32 patientCol = new Color32(192, 150, 110, 255);
+            Color32 mattressCol = new Color32(200, 228, 255, 255);
+            Color32 bedFrameCol = new Color32(120, 120, 125, 255);
+            Color32 trayTopCol = new Color32(160, 160, 160, 255);
+            Color32 trayLegCol = new Color32(90, 90, 90, 255);
+            Color32 trayCol = new Color32(60, 60, 60, 255);
+            Color32 cartCol = new Color32(170, 170, 175, 255);
+            Color32 machineCol = new Color32(130, 160, 190, 255);
+
+            Transform env = GameObject.Find("RoomRoot/Environment")?.transform;
+            if (env != null)
+            {
+                string[] walls = {"Wall_North","Wall_South","Wall_East","Wall_West"};
+                for (int i = 0; i < walls.Length; i++)
+                {
+                    var w = env.Find(walls[i]);
+                    if (w) SetRendererColor(w, "mat_wall_theme", wallCol, true);
+                }
+                var floor = env.Find("Floor");
+                if (floor) SetRendererColor(floor, "mat_floor_theme", floorCol, true);
+            }
+
+            Transform table = GameObject.Find("RoomRoot/TrayTable")?.transform;
+            if (table != null)
+            {
+                var top = table.Find("Table_Top");
+                if (top) SetRendererColor(top, "mat_traytable_top_theme", trayTopCol, false);
+                var legs = new[]{"Table_Leg_FL","Table_Leg_FR","Table_Leg_BL","Table_Leg_BR"};
+                for (int i = 0; i < legs.Length; i++)
+                {
+                    var lg = table.Find(legs[i]);
+                    if (lg) SetRendererColor(lg, "mat_traytable_leg_theme", trayLegCol, false);
+                }
+                var tray = table.Find("Tray");
+                if (tray) SetRendererColor(tray, "mat_tray_theme", trayCol, false);
+            }
+
+            Transform cart = GameObject.Find("RoomRoot/Cart")?.transform;
+            if (cart != null)
+            {
+                var cartTop = cart.Find("Cart_Top");
+                if (cartTop) SetRendererColor(cartTop, "mat_cart_theme", cartCol, false);
+                var rackBar = cart.Find("Rack/Rack_Bar");
+                if (rackBar) SetRendererColor(rackBar, "mat_rack_theme", bedFrameCol, false);
+                var machine = cart.Find("MachineConsole");
+                if (machine) SetRendererColor(machine, "mat_machine_theme", machineCol, true);
+                var pwr = cart.Find("PowerButton");
+                if (pwr) SetRendererColor(pwr, "mat_power_theme", new Color32(210,70,70,255), false);
+            }
+
+            Transform bed = GameObject.Find("RoomRoot/Bed")?.transform;
+            Transform patient = GameObject.Find("RoomRoot/Bed/Patient")?.transform;
+            if (patient != null)
+            {
+                var skinMat = EnsureMaterialAsset("mat_patient_skin", patientCol);
+                var rends = patient.GetComponentsInChildren<Renderer>(true);
+                for (int i = 0; i < rends.Length; i++)
+                {
+                    var r = rends[i];
+                    if (r == null) continue;
+                    string n = r.transform.name.ToLowerInvariant();
+                    if (n.Contains("genesis") || n.Contains("body") || n.Contains("torso") || n.Contains("head") || n.Contains("arm") || n.Contains("leg") || n.Contains("hand") || n.Contains("foot") || n.Contains("skin") )
+                    {
+                        var arr = r.sharedMaterials;
+                        if (arr != null && arr.Length > 0)
+                        {
+                            var mats = new Material[arr.Length];
+                            for (int j = 0; j < arr.Length; j++) mats[j] = skinMat;
+                            r.sharedMaterials = mats;
+                        }
+                        else
+                        {
+                            r.sharedMaterial = skinMat;
+                        }
+                    }
+                }
+                var genesisTf = FindChildByNameContains(patient, "genesis9");
+                if (genesisTf != null)
+                {
+                    var gensRends = genesisTf.GetComponentsInChildren<Renderer>(true);
+                    for (int i = 0; i < gensRends.Length; i++)
+                    {
+                        var r = gensRends[i];
+                        if (r == null) continue;
+                        var arr = r.sharedMaterials;
+                        if (arr != null && arr.Length > 0)
+                        {
+                            var mats = new Material[arr.Length];
+                            for (int j = 0; j < arr.Length; j++) mats[j] = skinMat;
+                            r.sharedMaterials = mats;
+                        }
+                        else
+                        {
+                            r.sharedMaterial = skinMat;
+                        }
+                    }
+                }
+            }
+            if (bed != null)
+            {
+                var mattress = FindChildByNameContains(bed, "mattress");
+                if (mattress) SetRendererColor(mattress, "mat_mattress_theme", mattressCol, true);
+                var pillow = FindChildByNameContains(bed, "pillow");
+                if (pillow) SetRendererColor(pillow, "mat_pillow_theme", Color.white, true);
+                var frame = FindChildByNameContains(bed, "frame") ?? FindChildByNameContains(bed, "rail");
+                if (frame) SetRendererColor(frame, "mat_bedframe_theme", bedFrameCol, true);
+            }
+        }
+
+        private static Transform FindChildByNameContains(Transform root, string token)
+        {
+            if (root == null || string.IsNullOrEmpty(token)) return null;
+            string t = token.ToLowerInvariant();
+            if (root.name.ToLowerInvariant().Contains(t)) return root;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                var c = FindChildByNameContains(root.GetChild(i), token);
+                if (c != null) return c;
+            }
+            return null;
+        }
+        
+        private static void GenerateRemapMaterials()
+        {
+            // Create a single material asset per name so remap panels can pick them without duplicates
+            // Colors are guessed to be sensible defaults for readability
+            var pairs = new (string name, Color col)[]
+            {
+                ("Arms", new Color32(192,150,110,255)),
+                ("Base_Middle", new Color32(180,185,192,255)),
+                ("Base_Upper", new Color32(200,205,210,255)),
+                ("Bed_CushionTXT", new Color32(200,228,255,255)),
+                ("Bed_PaperTXT", new Color32(245,245,245,255)),
+                ("Body", new Color32(192,150,110,255)),
+                ("DoctorBedTXT", new Color32(170,170,175,255)),
+                ("EyeMoisture_Left", new Color32(210,230,255,180)),
+                ("EyeMoisture_Right", new Color32(210,230,255,180)),
+                ("Eye_Left", new Color32(235,240,245,255)),
+                ("Eye_Right", new Color32(235,240,245,255)),
+                ("Eyebrows_Primary", new Color32(60,45,35,255)),
+                ("Eyebrows_Secondary", new Color32(60,45,35,255)),
+                ("Eyelashes_Lower", Color.black),
+                ("Eyelashes_Upper", Color.black),
+                ("Fingernails", new Color32(245,220,210,255)),
+                ("Head", new Color32(192,150,110,255)),
+                ("LVA_Pant", new Color32(40,70,120,255)),
+                ("LVA_Pant_Lower", new Color32(40,70,120,255)),
+                ("LVA_Pant_Upper", new Color32(40,70,120,255)),
+                ("Legs", new Color32(192,150,110,255)),
+                ("Lewis__high_top_fade", new Color32(40,35,30,255)),
+                ("Mouth", new Color32(210,120,120,255)),
+                ("Mouth_Cavity", new Color32(80,20,20,255)),
+                ("PillowTXT", Color.white),
+                ("Sole_Upper", new Color32(40,40,40,255)),
+                ("Soole_001", new Color32(40,40,40,255)),
+                ("Straps_001", new Color32(50,50,50,255)),
+                ("Tear", new Color32(210,230,255,180)),
+                ("Teeth", new Color32(245,245,240,255)),
+                ("Toenails", new Color32(240,215,205,255)),
+            };
+            for (int i = 0; i < pairs.Length; i++)
+            {
+                EnsureMaterialAsset(pairs[i].name, pairs[i].col);
+            }
+            AssetDatabase.Refresh();
         }
         
         private static Transform CreatePrimitive(Transform parent, string name, PrimitiveType type, Vector3 pos, Quaternion rot, Vector3 scale)
