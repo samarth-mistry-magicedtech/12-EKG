@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.XR;
 
 namespace SB12
 {
@@ -25,6 +26,10 @@ namespace SB12
         [SerializeField] private GameObject powerButton;
         
         private Dictionary<string, object> conditions = new Dictionary<string, object>();
+        
+        [Header("XR Input")]
+        [SerializeField] private XRNode continueXRNode = XRNode.RightHand;
+        private bool prevXRPressed = false;
         
         [System.Serializable]
         public class SlideData
@@ -55,21 +60,61 @@ namespace SB12
                 InitializeDefaultSlides();
             }
         }
+
+        private void Update()
+        {
+            // Allow advancing with Oculus/XR Origin controller (A button or trigger)
+            bool pressed = false;
+            try
+            {
+                var device = InputDevices.GetDeviceAtXRNode(continueXRNode);
+                if (device.isValid)
+                {
+                    bool primaryBtn = false, triggerBtn = false;
+                    device.TryGetFeatureValue(CommonUsages.primaryButton, out primaryBtn);
+                    device.TryGetFeatureValue(CommonUsages.triggerButton, out triggerBtn);
+                    pressed = primaryBtn || triggerBtn;
+                }
+            }
+            catch { }
+            if (pressed && !prevXRPressed)
+            {
+                NextSlide();
+            }
+            prevXRPressed = pressed;
+        }
         
         private void Start()
         {
             // Find UI references if not set
             if (slidePanel == null)
-                slidePanel = GameObject.Find("RoomRoot/UI/SB12_Panel");
+            {
+                slidePanel = GameObject.Find("SB12_Panel");
+                if (slidePanel == null)
+                    slidePanel = GameObject.Find("RoomRoot/UI/SB12_Panel");
+                if (slidePanel == null)
+                    slidePanel = GameObject.Find("RoomRoot/Environment/Wall_North/SB12_Panel");
+            }
             
             if (titleText == null && slidePanel != null)
-                titleText = slidePanel.transform.Find("Title")?.GetComponent<Text>();
+                titleText = FindDeepChild(slidePanel.transform, "Title")?.GetComponent<Text>();
             
             if (bodyText == null && slidePanel != null)
-                bodyText = slidePanel.transform.Find("BodyText")?.GetComponent<Text>();
+            {
+                var bodyTf = FindDeepChild(slidePanel.transform, "Body") ?? FindDeepChild(slidePanel.transform, "BodyText");
+                bodyText = bodyTf ? bodyTf.GetComponent<Text>() : null;
+            }
             
             if (continueButton == null && slidePanel != null)
-                continueButton = slidePanel.transform.Find("ContinueButton")?.GetComponent<Button>();
+            {
+                var btnTf = FindDeepChild(slidePanel.transform, "NextButton") ?? FindDeepChild(slidePanel.transform, "ContinueButton");
+                continueButton = btnTf ? btnTf.GetComponent<Button>() : null;
+            }
+            
+            if (footerText == null && continueButton != null)
+            {
+                footerText = continueButton.GetComponentInChildren<Text>();
+            }
             
             // Find game objects
             if (equipment == null)
@@ -87,6 +132,19 @@ namespace SB12
             
             // Show first slide
             ShowCurrentSlide();
+        }
+
+        private Transform FindDeepChild(Transform parent, string name)
+        {
+            if (parent == null || string.IsNullOrEmpty(name)) return null;
+            var direct = parent.Find(name);
+            if (direct != null) return direct;
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                var c = FindDeepChild(parent.GetChild(i), name);
+                if (c != null) return c;
+            }
+            return null;
         }
         
         private void InitializeDefaultSlides()
@@ -293,7 +351,9 @@ namespace SB12
                     break;
                     
                 case SlideAction.EnablePads:
-                    GameObject pads = GameObject.Find("RoomRoot/Cart/Tray/Pads");
+                    GameObject pads = GameObject.Find("RoomRoot/TrayTable/Tray/Pads");
+                    if (pads == null)
+                        pads = GameObject.Find("RoomRoot/Cart/Tray/Pads");
                     if (pads != null)
                     {
                         foreach (Transform pad in pads.transform)
