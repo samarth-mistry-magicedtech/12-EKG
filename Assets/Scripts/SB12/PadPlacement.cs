@@ -193,12 +193,14 @@ namespace SB12
                 
                 // Try to spawn peeled backing model
                 GameObject peeledPrefab = Resources.Load<GameObject>("EKG Backing Peeled");
+#if UNITY_EDITOR
                 if (peeledPrefab == null)
                 {
-                    // Try from assets folder
+                    // Try from assets folder (Editor-only)
                     peeledPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
                         "Assets/3DModelsElectrode/EKG Backing Peeled.fbx");
                 }
+#endif
                 
                 if (peeledPrefab != null)
                 {

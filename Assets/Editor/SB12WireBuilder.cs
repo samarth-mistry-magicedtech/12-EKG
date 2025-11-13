@@ -103,6 +103,7 @@ namespace SB12.Editor
                 end.highlightMaterial = plugHL;
                 end.wireBaseMaterial = wireBase;
                 end.wireHighlightMaterial = wireHL;
+                end.leadName = name;
 
                 // Ensure plug renderers use base mat now
                 foreach (var r in plug.GetComponentsInChildren<Renderer>(true)) r.sharedMaterial = plugBase;
@@ -215,6 +216,16 @@ namespace SB12.Editor
                 var col = plug.gameObject.GetComponent<CapsuleCollider>();
                 if (col == null) col = plug.gameObject.AddComponent<CapsuleCollider>();
                 col.radius = 0.03f; col.height = 0.12f; col.center = Vector3.zero; col.direction = 1;
+            }
+
+            // Ensure proximity trigger for auto-attach exists
+            var trigEnsure = plug.Find("AttachTrigger");
+            if (trigEnsure == null)
+            {
+                var trig = new GameObject("AttachTrigger").transform;
+                trig.SetParent(plug, false);
+                var sc = trig.gameObject.AddComponent<SphereCollider>();
+                sc.isTrigger = true; sc.radius = 0.06f; // match default attachDistance
             }
 
             var rb = plug.GetComponent<Rigidbody>();

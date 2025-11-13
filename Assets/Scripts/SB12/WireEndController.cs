@@ -18,12 +18,16 @@ namespace SB12
 
         [Header("Behavior")]
         public bool returnToHomeOnActivate = true;
+        public string leadName;
+        public float attachDistance = 0.06f;
 
         private XRGrabInteractable grab;
         private Transform homeParent;
         private Vector3 homeLocalPos;
         private Quaternion homeLocalRot;
         private bool hovered;
+        private bool isAttached;
+        private Transform attachedMount;
 
         private void Awake()
         {
@@ -106,6 +110,7 @@ namespace SB12
         }
         private void OnSelectEntered(SelectEnterEventArgs _)
         {
+            if (isAttached) DetachFromMount();
             if (highlightMaterial != null) SetMaterial(highlightMaterial);
         }
         private void OnSelectExited(SelectExitEventArgs _)
@@ -138,6 +143,81 @@ namespace SB12
                     else if (baseMaterial != null) lr.material = baseMaterial;
                 }
             }
+            isAttached = false;
+            attachedMount = null;
+        }
+
+        private void OnTriggerStay(Collider other)
+        {
+            if (grab != null && grab.isSelected) return;
+            if (isAttached) return;
+            if (other == null) return;
+            Transform mount;
+            string mountLead;
+            if (TryResolveMount(other.transform, out mount, out mountLead))
+            {
+                if (!string.IsNullOrEmpty(leadName) && mountLead == leadName)
+                {
+                    var d = Vector3.Distance(transform.position, mount.position);
+                    if (d <= attachDistance)
+                    {
+                        AttachToMount(mount);
+                    }
+                }
+            }
+        }
+
+        private bool TryResolveMount(Transform t, out Transform mount, out string lead)
+        {
+            mount = null; lead = null;
+            var curr = t;
+            for (int i = 0; i < 3 && curr != null; i++)
+            {
+                var n = curr.name;
+                if (!string.IsNullOrEmpty(n) && n.StartsWith("Mount_"))
+                {
+                    mount = curr;
+                    lead = n.Substring("Mount_".Length);
+                    return true;
+                }
+                curr = curr.parent;
+            }
+            return false;
+        }
+
+        private void AttachToMount(Transform mount)
+        {
+            isAttached = true;
+            attachedMount = mount;
+            var rb = GetComponent<Rigidbody>();
+            if (rb != null)
+            {
+                rb.velocity = Vector3.zero; rb.angularVelocity = Vector3.zero; rb.isKinematic = true;
+            }
+            transform.SetParent(mount, true);
+            transform.position = mount.position;
+            if (baseMaterial != null) SetMaterial(baseMaterial);
+            if (wire != null)
+            {
+                var lr = wire.GetComponent<LineRenderer>();
+                if (lr != null)
+                {
+                    if (wireBaseMaterial != null) lr.material = wireBaseMaterial;
+                    else if (baseMaterial != null) lr.material = baseMaterial;
+                }
+            }
+        }
+
+        private void DetachFromMount()
+        {
+            isAttached = false;
+            attachedMount = null;
+            var rb = GetComponent<Rigidbody>();
+            if (rb != null)
+            {
+                rb.isKinematic = false;
+            }
+            transform.SetParent(homeParent, true);
         }
     }
 }
