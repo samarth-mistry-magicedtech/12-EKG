@@ -13,6 +13,8 @@ namespace SB12
         [Header("Materials")]
         public Material baseMaterial;
         public Material highlightMaterial;
+        public Material wireBaseMaterial;
+        public Material wireHighlightMaterial;
 
         [Header("Behavior")]
         public bool returnToHomeOnActivate = true;
@@ -78,15 +80,29 @@ namespace SB12
         {
             hovered = true;
             if (highlightMaterial != null) SetMaterial(highlightMaterial);
-            if (wire != null && wire.GetComponent<LineRenderer>()?.material != null && highlightMaterial != null)
-                wire.GetComponent<LineRenderer>().material = highlightMaterial;
+            if (wire != null)
+            {
+                var lr = wire.GetComponent<LineRenderer>();
+                if (lr != null)
+                {
+                    if (wireHighlightMaterial != null) lr.material = wireHighlightMaterial;
+                    else if (highlightMaterial != null) lr.material = highlightMaterial;
+                }
+            }
         }
         private void OnHoverExited(HoverExitEventArgs _)
         {
             hovered = false;
             if (!grab.isSelected && baseMaterial != null) SetMaterial(baseMaterial);
-            if (!grab.isSelected && wire != null && wire.GetComponent<LineRenderer>()?.material != null && baseMaterial != null)
-                wire.GetComponent<LineRenderer>().material = baseMaterial;
+            if (!grab.isSelected && wire != null)
+            {
+                var lr = wire.GetComponent<LineRenderer>();
+                if (lr != null)
+                {
+                    if (wireBaseMaterial != null) lr.material = wireBaseMaterial;
+                    else if (baseMaterial != null) lr.material = baseMaterial;
+                }
+            }
         }
         private void OnSelectEntered(SelectEnterEventArgs _)
         {
@@ -113,8 +129,15 @@ namespace SB12
             transform.localPosition = homeLocalPos;
             transform.localRotation = homeLocalRot;
             if (baseMaterial != null) SetMaterial(baseMaterial);
-            if (wire != null && wire.GetComponent<LineRenderer>()?.material != null && baseMaterial != null)
-                wire.GetComponent<LineRenderer>().material = baseMaterial;
+            if (wire != null)
+            {
+                var lr = wire.GetComponent<LineRenderer>();
+                if (lr != null)
+                {
+                    if (wireBaseMaterial != null) lr.material = wireBaseMaterial;
+                    else if (baseMaterial != null) lr.material = baseMaterial;
+                }
+            }
         }
     }
 }

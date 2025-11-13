@@ -20,11 +20,8 @@ namespace SB12.Editor
 
             var root = FindOrCreate(cart.transform, "Wires");
 
-            // Ensure materials
-            var wireBase = EnsureMat("Assets/SB12/Materials/Wires/wire_base.mat", new Color(0.06f,0.06f,0.06f));
-            var wireHL   = EnsureMat("Assets/SB12/Materials/Wires/wire_highlight.mat", new Color(0.2f,0.8f,1f));
-            var plugBase = EnsureMat("Assets/SB12/Materials/Wires/plug_base.mat", new Color(0.35f,0.35f,0.35f));
-            var plugHL   = EnsureMat("Assets/SB12/Materials/Wires/plug_highlight.mat", new Color(1f,0.85f,0.2f));
+            // Per-lead colors derived from marker materials (fallback to default palette)
+            var defaultPalette = GetDefaultLeadPalette();
 
             // Create anchors laid out along the cart top front edge
             // Fallback if Cart_Top not present: use cart origin with offsets
@@ -38,11 +35,24 @@ namespace SB12.Editor
 
             // Place 10 anchors in a row with spacing
             float spacing = 0.07f; // 7cm
-            Vector3 start = basePos + forward * 0.25f - right * (spacing * 4.5f);
+            Vector3 start = basePos - forward * 0.25f - right * (spacing * 4.5f);
 
             for (int i = 0; i < names.Length; i++)
             {
                 string name = names[i];
+                // Resolve color for this lead from marker mat or fallback palette
+                Color leadColor;
+                if (!TryLoadMarkerColor(name, out leadColor))
+                {
+                    if (!defaultPalette.TryGetValue(name, out leadColor)) leadColor = new Color(0.5f,0.5f,0.5f);
+                }
+
+                // Build or load per-lead materials
+                var wireBase = EnsureMat($"Assets/SB12/Materials/Wires/wire_{name}_base.mat", leadColor);
+                var wireHL   = EnsureMat($"Assets/SB12/Materials/Wires/wire_{name}_highlight.mat", Brighten(leadColor, 1.5f));
+                var plugBase = EnsureMat($"Assets/SB12/Materials/Wires/plug_{name}_base.mat", leadColor);
+                var plugHL   = EnsureMat($"Assets/SB12/Materials/Wires/plug_{name}_highlight.mat", Brighten(leadColor, 1.5f));
+
                 var anchor = FindOrCreate(root, $"Anchor_{name}");
                 anchor.position = start + right * (i * spacing);
                 anchor.rotation = Quaternion.identity;
@@ -56,14 +66,20 @@ namespace SB12.Editor
                     Object.DestroyImmediate(s.GetComponent<Collider>());
                     s.GetComponent<Renderer>().sharedMaterial = wireBase;
                 }
+                else
+                {
+                    // Update gizmo color if it already exists
+                    var r = anchorVis.GetComponent<Renderer>();
+                    if (r != null) r.sharedMaterial = wireBase;
+                }
 
                 // Build or update plug
                 var plug = FindOrCreate(root, $"Plug_{name}");
                 BuildOrUpdatePlug(plug, plugBase, plugHL);
 
                 // Home pose next to anchor, offset forward a bit
-                plug.position = anchor.position + forward * 0.05f;
-                plug.rotation = Quaternion.LookRotation(forward, Vector3.up);
+                plug.position = anchor.position - forward * 0.05f;
+                plug.rotation = Quaternion.LookRotation(-forward, Vector3.up);
 
                 // Wire holder
                 var wireGo = FindOrCreate(root, $"Wire_{name}").gameObject;
@@ -85,6 +101,8 @@ namespace SB12.Editor
                 end.wire = wr;
                 end.baseMaterial = plugBase;
                 end.highlightMaterial = plugHL;
+                end.wireBaseMaterial = wireBase;
+                end.wireHighlightMaterial = wireHL;
 
                 // Ensure plug renderers use base mat now
                 foreach (var r in plug.GetComponentsInChildren<Renderer>(true)) r.sharedMaterial = plugBase;
@@ -134,6 +152,46 @@ namespace SB12.Editor
                 EditorUtility.SetDirty(mat);
             }
             return mat;
+        }
+
+        private static bool TryLoadMarkerColor(string lead, out Color color)
+        {
+            // Markers are created as: Assets/SB12/Materials/Markers/mat_marker_Mount_<LEAD>.mat
+            string path = $"Assets/SB12/Materials/Markers/mat_marker_Mount_{lead}.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat != null)
+            {
+                color = mat.color;
+                return true;
+            }
+            color = default(Color);
+            return false;
+        }
+
+        private static Dictionary<string, Color> GetDefaultLeadPalette()
+        {
+            // Mirrors SB12AnchorAndMounts palette
+            return new Dictionary<string, Color>
+            {
+                {"RA", new Color(1f, 0.15f, 0.15f)},
+                {"LA", new Color(0.2f, 0.5f, 1f)},
+                {"RL", new Color(1f, 0f, 1f)},
+                {"LL", new Color(0f, 1f, 1f)},
+                {"V1", new Color(0.2f, 1f, 0.2f)},
+                {"V2", new Color(1f, 1f, 0.2f)},
+                {"V3", new Color(1f, 0.6f, 0.2f)},
+                {"V4", new Color(0.6f, 0.2f, 1f)},
+                {"V5", new Color(1f, 0.3f, 0.7f)},
+                {"V6", new Color(0.1f, 0.9f, 0.8f)},
+            };
+        }
+
+        private static Color Brighten(Color c, float factor)
+        {
+            float r = Mathf.Clamp01(c.r * factor);
+            float g = Mathf.Clamp01(c.g * factor);
+            float b = Mathf.Clamp01(c.b * factor);
+            return new Color(r,g,b,1f);
         }
 
         private static void BuildOrUpdatePlug(Transform plug, Material baseMat, Material highlightMat)
