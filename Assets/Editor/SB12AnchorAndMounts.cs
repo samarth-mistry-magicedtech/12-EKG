@@ -115,11 +115,8 @@ namespace SB12.Editor
                 var r = quad.GetComponent<Renderer>();
                 if (r != null)
                 {
-                    var m = new Material(Shader.Find("Standard"));
-                    m.color = color;
-                    m.EnableKeyword("_EMISSION");
-                    m.SetColor("_EmissionColor", color);
-                    r.sharedMaterial = m;
+                    var mat = EnsureMarkerMatAsset($"mat_marker_{name}", color);
+                    r.sharedMaterial = mat;
                 }
             }
             else
@@ -127,13 +124,41 @@ namespace SB12.Editor
                 var r = marker.GetComponent<Renderer>();
                 if (r != null)
                 {
-                    var m = r.sharedMaterial ?? new Material(Shader.Find("Standard"));
-                    m.color = color;
-                    m.EnableKeyword("_EMISSION");
-                    m.SetColor("_EmissionColor", color);
-                    r.sharedMaterial = m;
+                    var mat = EnsureMarkerMatAsset($"mat_marker_{name}", color);
+                    r.sharedMaterial = mat;
                 }
             }
+        }
+
+        private static Material EnsureMarkerMatAsset(string key, Color baseColor)
+        {
+            string baseFolder = "Assets/SB12";
+            string matsFolder = "Assets/SB12/Materials";
+            string markerFolder = "Assets/SB12/Materials/Markers";
+            if (!AssetDatabase.IsValidFolder(baseFolder)) AssetDatabase.CreateFolder("Assets", "SB12");
+            if (!AssetDatabase.IsValidFolder(matsFolder)) AssetDatabase.CreateFolder(baseFolder, "Materials");
+            if (!AssetDatabase.IsValidFolder(markerFolder)) AssetDatabase.CreateFolder(matsFolder, "Markers");
+            string path = $"{markerFolder}/{key}.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null)
+            {
+                mat = new Material(Shader.Find("Standard"));
+                mat.color = baseColor;
+                mat.EnableKeyword("_EMISSION");
+                mat.SetColor("_EmissionColor", baseColor);
+                AssetDatabase.CreateAsset(mat, path);
+                AssetDatabase.SaveAssets();
+            }
+            else
+            {
+                // Keep color in sync with requested palette
+                mat.color = baseColor;
+                mat.EnableKeyword("_EMISSION");
+                mat.SetColor("_EmissionColor", baseColor);
+                EditorUtility.SetDirty(mat);
+                AssetDatabase.SaveAssets();
+            }
+            return mat;
         }
 
         private static float SafeDiv(float a, float b) => b > 1e-5f ? a / b : a;
