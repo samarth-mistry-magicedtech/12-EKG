@@ -19,7 +19,7 @@ namespace SB12
         [Header("Behavior")]
         public bool returnToHomeOnActivate = true;
         public string leadName;
-        public float attachDistance = 0.06f;
+        public float attachDistance = 1.0f;
 
         private XRGrabInteractable grab;
         private Transform homeParent;
@@ -40,6 +40,12 @@ namespace SB12
             homeParent = transform.parent;
             homeLocalPos = transform.localPosition;
             homeLocalRot = transform.localRotation;
+
+            // Fallback: infer lead name from object name if not set (e.g., Plug_RA -> RA)
+            if (string.IsNullOrEmpty(leadName))
+            {
+                leadName = ParseLeadFromName(gameObject.name);
+            }
 
             // XR events
             grab.hoverEntered.AddListener(OnHoverEntered);
@@ -116,6 +122,8 @@ namespace SB12
         private void OnSelectExited(SelectExitEventArgs _)
         {
             if (baseMaterial != null) SetMaterial(baseMaterial);
+            // Try to attach if released near matching mount; otherwise return home after a short delay
+            if (!isAttached) StartCoroutine(TryAttachThenMaybeReturn());
         }
         private void OnActivated(ActivateEventArgs _)
         {
@@ -145,6 +153,47 @@ namespace SB12
             }
             isAttached = false;
             attachedMount = null;
+        }
+
+        private System.Collections.IEnumerator TryAttachThenMaybeReturn()
+        {
+            // Give physics a frame to settle
+            yield return null;
+            if (TryAttachNearby()) yield break;
+            // Small grace period for triggers to fire
+            yield return new WaitForSeconds(0.2f);
+            if (!isAttached) ResetToHome();
+        }
+
+        private bool TryAttachNearby()
+        {
+            // Check nearby colliders in a sphere for a matching Mount_<LEAD>
+            var hits = Physics.OverlapSphere(transform.position, attachDistance);
+            Transform best = null;
+            float bestDist = attachDistance;
+            for (int i = 0; i < hits.Length; i++)
+            {
+                var col = hits[i];
+                if (col == null) continue;
+                Transform mount; string mountLead;
+                if (TryResolveMount(col.transform, out mount, out mountLead))
+                {
+                    if (!string.IsNullOrEmpty(leadName) && mountLead == leadName)
+                    {
+                        float d = Vector3.Distance(transform.position, mount.position);
+                        if (d <= bestDist)
+                        {
+                            bestDist = d; best = mount;
+                        }
+                    }
+                }
+            }
+            if (best != null)
+            {
+                AttachToMount(best);
+                return true;
+            }
+            return false;
         }
 
         private void OnTriggerStay(Collider other)
@@ -196,6 +245,7 @@ namespace SB12
             }
             transform.SetParent(mount, true);
             transform.position = mount.position;
+            transform.rotation = mount.rotation;
             if (baseMaterial != null) SetMaterial(baseMaterial);
             if (wire != null)
             {
@@ -218,6 +268,18 @@ namespace SB12
                 rb.isKinematic = false;
             }
             transform.SetParent(homeParent, true);
+        }
+
+        private string ParseLeadFromName(string objName)
+        {
+            if (string.IsNullOrEmpty(objName)) return null;
+            // Expecting names like "Plug_RA" => returns "RA"
+            const string prefix = "Plug_";
+            if (objName.StartsWith(prefix))
+            {
+                return objName.Substring(prefix.Length);
+            }
+            return null;
         }
     }
 }

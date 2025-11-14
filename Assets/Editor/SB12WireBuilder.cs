@@ -104,6 +104,7 @@ namespace SB12.Editor
                 end.wireBaseMaterial = wireBase;
                 end.wireHighlightMaterial = wireHL;
                 end.leadName = name;
+                end.attachDistance = 1.0f;
 
                 // Ensure plug renderers use base mat now
                 foreach (var r in plug.GetComponentsInChildren<Renderer>(true)) r.sharedMaterial = plugBase;
